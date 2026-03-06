@@ -25,6 +25,7 @@ export const DEFAULT_ITEM_ORDER = [
   'apps',
   'scheduler',
   'extensions',
+  'copilot',
   'settings',
 ];
 

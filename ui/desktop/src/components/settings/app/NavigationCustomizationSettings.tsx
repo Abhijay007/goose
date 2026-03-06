@@ -49,6 +49,10 @@ const i18n = defineMessages({
     id: 'navigationCustomization.itemExtensions',
     defaultMessage: 'Extensions',
   },
+  itemCopilot: {
+    id: 'navigationCustomization.itemCopilot',
+    defaultMessage: 'Copilot',
+  },
   itemSettings: {
     id: 'navigationCustomization.itemSettings',
     defaultMessage: 'Settings',
@@ -62,6 +66,7 @@ const ITEM_LABEL_KEYS: Record<string, keyof typeof i18n> = {
   apps: 'itemApps',
   scheduler: 'itemScheduler',
   extensions: 'itemExtensions',
+  copilot: 'itemCopilot',
   settings: 'itemSettings',
 };
 
