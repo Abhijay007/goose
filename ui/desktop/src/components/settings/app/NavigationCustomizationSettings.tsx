@@ -14,6 +14,7 @@ const ITEM_LABELS: Record<string, string> = {
   apps: 'Apps',
   scheduler: 'Scheduler',
   extensions: 'Extensions',
+  copilot: 'Copilot',
   settings: 'Settings',
 };
 

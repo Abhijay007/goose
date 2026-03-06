@@ -31,6 +31,44 @@ use serde_yaml;
 use std::{collections::HashMap, sync::Arc};
 use utoipa::ToSchema;
 
+const GITHUB_COPILOT_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
+const GITHUB_COPILOT_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
+const GITHUB_COPILOT_ACCESS_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
+const GITHUB_COPILOT_API_KEY_URL: &str = "https://api.github.com/copilot_internal/v2/token";
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct GithubDeviceCodeResponse {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub expires_in: u64,
+    pub interval: u64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct GithubPollRequest {
+    pub device_code: String,
+}
+
+fn github_headers() -> reqwest::header::HeaderMap {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::ACCEPT,
+        "application/json".parse().unwrap(),
+    );
+    headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        "application/json".parse().unwrap(),
+    );
+    headers.insert(
+        reqwest::header::USER_AGENT,
+        "GithubCopilot/1.155.0".parse().unwrap(),
+    );
+    headers.insert("editor-version", "vscode/1.85.1".parse().unwrap());
+    headers.insert("editor-plugin-version", "copilot/1.155.0".parse().unwrap());
+    headers
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct ExtensionResponse {
     pub extensions: Vec<ExtensionEntry>,
@@ -910,6 +948,167 @@ pub async fn configure_provider_oauth(
     Ok(Json("OAuth configuration completed".to_string()))
 }
 
+#[utoipa::path(
+    post,
+    path = "/config/providers/github_copilot/oauth/device-code",
+    responses(
+        (status = 200, description = "Device code info returned", body = GithubDeviceCodeResponse),
+        (status = 400, description = "Failed to get device code")
+    )
+)]
+pub async fn github_copilot_device_code() -> Result<Json<GithubDeviceCodeResponse>, ErrorResponse> {
+    #[derive(Serialize)]
+    struct DeviceCodeRequest {
+        client_id: String,
+        scope: String,
+    }
+    #[derive(Deserialize)]
+    struct RawDeviceCodeResponse {
+        device_code: String,
+        user_code: String,
+        verification_uri: String,
+        expires_in: Option<u64>,
+        interval: Option<u64>,
+    }
+
+    let client = reqwest::Client::new();
+    let raw = client
+        .post(GITHUB_COPILOT_DEVICE_CODE_URL)
+        .headers(github_headers())
+        .json(&DeviceCodeRequest {
+            client_id: GITHUB_COPILOT_CLIENT_ID.to_string(),
+            scope: "read:user".to_string(),
+        })
+        .send()
+        .await
+        .map_err(|e| ErrorResponse::bad_request(format!("Failed to request device code: {}", e)))?
+        .error_for_status()
+        .map_err(|e| ErrorResponse::bad_request(format!("GitHub returned error: {}", e)))?
+        .json::<RawDeviceCodeResponse>()
+        .await
+        .map_err(|e| {
+            ErrorResponse::bad_request(format!("Failed to parse device code response: {}", e))
+        })?;
+
+    Ok(Json(GithubDeviceCodeResponse {
+        device_code: raw.device_code,
+        user_code: raw.user_code,
+        verification_uri: raw.verification_uri,
+        expires_in: raw.expires_in.unwrap_or(900),
+        interval: raw.interval.unwrap_or(5),
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/config/providers/github_copilot/oauth/poll",
+    request_body = GithubPollRequest,
+    responses(
+        (status = 200, description = "Authentication completed"),
+        (status = 400, description = "Polling failed or timed out")
+    )
+)]
+pub async fn github_copilot_poll_token(
+    Json(body): Json<GithubPollRequest>,
+) -> Result<Json<String>, ErrorResponse> {
+    #[derive(Serialize)]
+    struct TokenRequest {
+        client_id: String,
+        device_code: String,
+        grant_type: String,
+    }
+    #[derive(Deserialize)]
+    struct TokenResponse {
+        access_token: Option<String>,
+        error: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct CopilotTokenInfo {
+        token: String,
+    }
+
+    let client = reqwest::Client::new();
+    let max_attempts = 36;
+
+    for _ in 0..max_attempts {
+        let resp = client
+            .post(GITHUB_COPILOT_ACCESS_TOKEN_URL)
+            .headers(github_headers())
+            .json(&TokenRequest {
+                client_id: GITHUB_COPILOT_CLIENT_ID.to_string(),
+                device_code: body.device_code.clone(),
+                grant_type: "urn:ietf:params:oauth:grant-type:device_code".to_string(),
+            })
+            .send()
+            .await
+            .map_err(|e| ErrorResponse::bad_request(format!("Failed to poll for token: {}", e)))?
+            .error_for_status()
+            .map_err(|e| ErrorResponse::bad_request(format!("GitHub returned error: {}", e)))?
+            .json::<TokenResponse>()
+            .await
+            .map_err(|e| {
+                ErrorResponse::bad_request(format!("Failed to parse token response: {}", e))
+            })?;
+
+        if let Some(access_token) = resp.access_token {
+            let copilot_token_resp = client
+                .get(GITHUB_COPILOT_API_KEY_URL)
+                .headers(github_headers())
+                .header(
+                    reqwest::header::AUTHORIZATION,
+                    format!("bearer {}", &access_token),
+                )
+                .send()
+                .await
+                .map_err(|e| {
+                    ErrorResponse::bad_request(format!("Failed to fetch Copilot token: {}", e))
+                })?
+                .error_for_status()
+                .map_err(|e| {
+                    ErrorResponse::bad_request(format!("Copilot token fetch error: {}", e))
+                })?
+                .json::<CopilotTokenInfo>()
+                .await
+                .map_err(|e| {
+                    ErrorResponse::bad_request(format!("Failed to parse Copilot token: {}", e))
+                })?;
+
+            let config = Config::global();
+            config
+                .set_secret("GITHUB_COPILOT_TOKEN", &access_token)
+                .map_err(|e| {
+                    ErrorResponse::bad_request(format!("Failed to save access token: {}", e))
+                })?;
+            config
+                .set_param("github_copilot_configured", true)
+                .map_err(|e| {
+                    ErrorResponse::bad_request(format!("Failed to mark provider configured: {}", e))
+                })?;
+
+            tracing::debug!(
+                "GitHub Copilot OAuth complete, copilot token: {}…",
+                &copilot_token_resp.token[..8]
+            );
+            return Ok(Json("Authentication completed".to_string()));
+        }
+
+        if let Some(ref err) = resp.error {
+            if err != "authorization_pending" {
+                return Err(ErrorResponse::bad_request(format!(
+                    "GitHub OAuth error: {}",
+                    err
+                )));
+            }
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    }
+
+    Err(ErrorResponse::bad_request(
+        "Timed out waiting for GitHub authorization".to_string(),
+    ))
+}
+
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/config", get(read_all_config))
@@ -953,6 +1152,14 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route(
             "/config/providers/{name}/oauth",
             post(configure_provider_oauth),
+        )
+        .route(
+            "/config/providers/github_copilot/oauth/device-code",
+            post(github_copilot_device_code),
+        )
+        .route(
+            "/config/providers/github_copilot/oauth/poll",
+            post(github_copilot_poll_token),
         )
         .with_state(state)
 }

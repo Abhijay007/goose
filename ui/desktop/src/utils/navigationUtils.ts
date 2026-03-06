@@ -18,7 +18,8 @@ export type View =
   | 'sharedSession'
   | 'loading'
   | 'recipes'
-  | 'permission';
+  | 'permission'
+  | 'copilot';
 
 export type ViewOptions = {
   showEnvVars?: boolean;
@@ -82,6 +83,9 @@ export const createNavigationHandler = (navigate: NavigateFunction) => {
         break;
       case 'extensions':
         navigate('/extensions', { state: options });
+        break;
+      case 'copilot':
+        navigate('/copilot', { state: options });
         break;
       default:
         navigate('/', { state: options });
