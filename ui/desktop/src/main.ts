@@ -18,6 +18,7 @@ import {
 } from 'electron';
 import { pathToFileURL, format as formatUrl, URLSearchParams } from 'node:url';
 import { Buffer } from 'node:buffer';
+import http from 'node:http';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import started from 'electron-squirrel-startup';
@@ -315,6 +316,9 @@ async function processProtocolUrl(parsedUrl: URL, window: BrowserWindow) {
 
   if (parsedUrl.hostname === 'extension') {
     window.webContents.send('add-extension', pendingDeepLink);
+  } else if (parsedUrl.hostname === 'github-auth') {
+    window.webContents.send('github-auth-callback', pendingDeepLink);
+    pendingDeepLink = null;
   } else if (parsedUrl.hostname === 'sessions') {
     window.webContents.send('open-shared-session', pendingDeepLink);
   } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
@@ -365,7 +369,7 @@ app.on('open-url', async (_event, url) => {
       return;
     }
 
-    // For extension/session URLs, store the deep link for processing after React is ready
+    // For extension/session/github-auth URLs, store the deep link for processing after React is ready
     pendingDeepLink = url;
     log.info('[Main] Stored pending deep link for processing after React ready:', url);
 
@@ -376,6 +380,9 @@ app.on('open-url', async (_event, url) => {
       firstOpenWindow.focus();
       if (parsedUrl.hostname === 'extension') {
         firstOpenWindow.webContents.send('add-extension', pendingDeepLink);
+        pendingDeepLink = null;
+      } else if (parsedUrl.hostname === 'github-auth') {
+        firstOpenWindow.webContents.send('github-auth-callback', pendingDeepLink);
         pendingDeepLink = null;
       } else if (parsedUrl.hostname === 'sessions') {
         firstOpenWindow.webContents.send('open-shared-session', pendingDeepLink);
@@ -1263,6 +1270,9 @@ ipcMain.on('react-ready', (event) => {
       if (parsedUrl.hostname === 'extension') {
         log.info('Sending add-extension IPC to ready window');
         window.webContents.send('add-extension', pendingDeepLink);
+      } else if (parsedUrl.hostname === 'github-auth') {
+        log.info('Sending github-auth-callback IPC to ready window');
+        window.webContents.send('github-auth-callback', pendingDeepLink);
       } else if (parsedUrl.hostname === 'sessions') {
         log.info('Sending open-shared-session IPC to ready window');
         window.webContents.send('open-shared-session', pendingDeepLink);
@@ -1288,6 +1298,106 @@ ipcMain.handle('open-external', async (_event, url: string) => {
   }
 
   await shell.openExternal(url);
+});
+
+ipcMain.handle('start-github-oauth', async (event) => {
+  const clientId = process.env.VITE_GITHUB_CLIENT_ID || process.env.GITHUB_CLIENT_ID;
+  if (!clientId) {
+    return {
+      error: 'GitHub Client ID not configured. Set VITE_GITHUB_CLIENT_ID in your .env file.',
+    };
+  }
+  return new Promise<{ token: string } | { error: string }>((resolve) => {
+    let redirectUri = '';
+
+    const server = http.createServer(async (req, res) => {
+      if (!req.url?.startsWith('/callback')) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+
+      const params = new URLSearchParams(req.url.slice(req.url.indexOf('?') + 1));
+      const code = params.get('code');
+      const error = params.get('error');
+
+      if (error || !code) {
+        const html = `<html><body style="font-family:sans-serif;text-align:center;padding:60px">
+          <h2>❌ Authorization failed</h2>
+          <p>${params.get('error_description') || error || 'No code received'}</p>
+          <script>window.close();</script>
+        </body></html>`;
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(html);
+        server.close();
+        resolve({
+          error: params.get('error_description') || error || 'No code received from GitHub',
+        });
+        return;
+      }
+
+      try {
+        const tokenRes = await net.fetch('https://github.com/login/oauth/access_token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ client_id: clientId, code, redirect_uri: redirectUri }),
+        });
+        const data = (await tokenRes.json()) as {
+          access_token?: string;
+          error?: string;
+          error_description?: string;
+        };
+
+        const html = `<html><body style="font-family:sans-serif;text-align:center;padding:60px">
+          <h2>${data.error ? '❌ Authorization failed' : '✅ Authorization successful'}</h2>
+          <p>${data.error ? data.error_description || data.error : 'You can close this tab and return to Goose.'}</p>
+          <script>window.close();</script>
+        </body></html>`;
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(html);
+        server.close();
+
+        if (data.error || !data.access_token) {
+          resolve({ error: data.error_description || data.error || 'No access token returned' });
+        } else {
+          const senderWindow = BrowserWindow.fromWebContents(event.sender);
+          if (senderWindow) senderWindow.focus();
+          resolve({ token: data.access_token });
+        }
+      } catch (err) {
+        res.writeHead(500);
+        res.end('Token exchange failed');
+        server.close();
+        resolve({ error: err instanceof Error ? err.message : 'Token exchange failed' });
+      }
+    });
+
+    server.listen(0, '127.0.0.1', () => {
+      const port = (server.address() as { port: number }).port;
+      redirectUri = `http://localhost:${port}/callback`;
+      const state = Math.random().toString(36).slice(2);
+      const authUrl =
+        `https://github.com/login/oauth/authorize` +
+        `?client_id=${clientId}` +
+        `&scope=${encodeURIComponent('repo,read:user')}` +
+        `&state=${state}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}`;
+      log.info('[GitHub OAuth] Opening browser for OAuth:', authUrl);
+      shell.openExternal(authUrl);
+    });
+
+    server.on('error', (err) => {
+      resolve({ error: `OAuth server error: ${err.message}` });
+    });
+
+    setTimeout(
+      () => {
+        server.close();
+        resolve({ error: 'OAuth timed out after 5 minutes' });
+      },
+      5 * 60 * 1000
+    );
+  });
 });
 
 ipcMain.handle('directory-chooser', async () => {

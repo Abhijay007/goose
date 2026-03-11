@@ -162,6 +162,9 @@ type ElectronAPI = {
   onUpdaterEvent: (callback: (event: UpdaterEvent) => void) => void;
   getUpdateState: () => Promise<{ updateAvailable: boolean; latestVersion?: string } | null>;
   isUsingGitHubFallback: () => Promise<boolean>;
+  onGitHubAuthCallback: (callback: (url: string) => void) => void;
+  offGitHubAuthCallback: (callback: (url: string) => void) => void;
+  startGitHubOAuth: () => Promise<{ token: string } | { error: string }>;
   // Recipe warning functions
   closeWindow: () => void;
   hasAcceptedRecipeBefore: (recipe: Recipe) => Promise<boolean>;
@@ -319,6 +322,15 @@ const electronAPI: ElectronAPI = {
   refreshApp: (app: GooseApp) => ipcRenderer.invoke('refresh-app', app),
   closeApp: (appName: string) => ipcRenderer.invoke('close-app', appName),
   addRecentDir: (dir: string) => ipcRenderer.invoke('add-recent-dir', dir),
+  onGitHubAuthCallback: (callback: (url: string) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, url: string) => callback(url);
+    ipcRenderer.on('github-auth-callback', wrapped);
+  },
+  offGitHubAuthCallback: (callback: (url: string) => void) => {
+    ipcRenderer.removeAllListeners('github-auth-callback');
+    void callback;
+  },
+  startGitHubOAuth: () => ipcRenderer.invoke('start-github-oauth'),
 };
 
 const appConfigAPI: AppConfigAPI = {

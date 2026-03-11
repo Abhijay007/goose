@@ -1383,6 +1383,55 @@
         }
       }
     },
+    "/config/providers/github_copilot/oauth/device-code": {
+      "post": {
+        "tags": [
+          "super::routes::config_management"
+        ],
+        "operationId": "github_copilot_device_code",
+        "responses": {
+          "200": {
+            "description": "Device code info returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubDeviceCodeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Failed to get device code"
+          }
+        }
+      }
+    },
+    "/config/providers/github_copilot/oauth/poll": {
+      "post": {
+        "tags": [
+          "super::routes::config_management"
+        ],
+        "operationId": "github_copilot_poll_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GithubPollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Authentication completed"
+          },
+          "400": {
+            "description": "Polling failed or timed out"
+          }
+        }
+      }
+    },
     "/config/providers/{name}/cleanup": {
       "post": {
         "tags": [
@@ -5258,6 +5307,48 @@
             "nullable": true
           },
           "session_id": {
+            "type": "string"
+          }
+        }
+      },
+      "GithubDeviceCodeResponse": {
+        "type": "object",
+        "required": [
+          "device_code",
+          "user_code",
+          "verification_uri",
+          "expires_in",
+          "interval"
+        ],
+        "properties": {
+          "device_code": {
+            "type": "string"
+          },
+          "expires_in": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "interval": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "user_code": {
+            "type": "string"
+          },
+          "verification_uri": {
+            "type": "string"
+          }
+        }
+      },
+      "GithubPollRequest": {
+        "type": "object",
+        "required": [
+          "device_code"
+        ],
+        "properties": {
+          "device_code": {
             "type": "string"
           }
         }

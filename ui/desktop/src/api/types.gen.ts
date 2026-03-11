@@ -491,6 +491,18 @@ export type GetToolsQuery = {
     session_id: string;
 };
 
+export type GithubDeviceCodeResponse = {
+    device_code: string;
+    expires_in: number;
+    interval: number;
+    user_code: string;
+    verification_uri: string;
+};
+
+export type GithubPollRequest = {
+    device_code: string;
+};
+
 export type GooseApp = McpAppResource & (WindowProps | null) & {
     mcpServers?: Array<string>;
     prd?: string | null;
@@ -2654,6 +2666,50 @@ export type ProvidersResponses = {
 };
 
 export type ProvidersResponse2 = ProvidersResponses[keyof ProvidersResponses];
+
+export type GithubCopilotDeviceCodeData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/config/providers/github_copilot/oauth/device-code';
+};
+
+export type GithubCopilotDeviceCodeErrors = {
+    /**
+     * Failed to get device code
+     */
+    400: unknown;
+};
+
+export type GithubCopilotDeviceCodeResponses = {
+    /**
+     * Device code info returned
+     */
+    200: GithubDeviceCodeResponse;
+};
+
+export type GithubCopilotDeviceCodeResponse = GithubCopilotDeviceCodeResponses[keyof GithubCopilotDeviceCodeResponses];
+
+export type GithubCopilotPollTokenData = {
+    body: GithubPollRequest;
+    path?: never;
+    query?: never;
+    url: '/config/providers/github_copilot/oauth/poll';
+};
+
+export type GithubCopilotPollTokenErrors = {
+    /**
+     * Polling failed or timed out
+     */
+    400: unknown;
+};
+
+export type GithubCopilotPollTokenResponses = {
+    /**
+     * Authentication completed
+     */
+    200: unknown;
+};
 
 export type CleanupProviderCacheData = {
     body?: never;
