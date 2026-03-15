@@ -18,7 +18,6 @@ import {
 } from 'electron';
 import { pathToFileURL, format as formatUrl, URLSearchParams } from 'node:url';
 import { Buffer } from 'node:buffer';
-import http from 'node:http';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import started from 'electron-squirrel-startup';
@@ -1300,104 +1299,87 @@ ipcMain.handle('open-external', async (_event, url: string) => {
   await shell.openExternal(url);
 });
 
-ipcMain.handle('start-github-oauth', async (event) => {
+ipcMain.handle('start-github-device-flow', async () => {
   const clientId = process.env.VITE_GITHUB_CLIENT_ID || process.env.GITHUB_CLIENT_ID;
   if (!clientId) {
     return {
       error: 'GitHub Client ID not configured. Set VITE_GITHUB_CLIENT_ID in your .env file.',
     };
   }
-  return new Promise<{ token: string } | { error: string }>((resolve) => {
-    let redirectUri = '';
-
-    const server = http.createServer(async (req, res) => {
-      if (!req.url?.startsWith('/callback')) {
-        res.writeHead(404);
-        res.end();
-        return;
-      }
-
-      const params = new URLSearchParams(req.url.slice(req.url.indexOf('?') + 1));
-      const code = params.get('code');
-      const error = params.get('error');
-
-      if (error || !code) {
-        const html = `<html><body style="font-family:sans-serif;text-align:center;padding:60px">
-          <h2>❌ Authorization failed</h2>
-          <p>${params.get('error_description') || error || 'No code received'}</p>
-          <script>window.close();</script>
-        </body></html>`;
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(html);
-        server.close();
-        resolve({
-          error: params.get('error_description') || error || 'No code received from GitHub',
-        });
-        return;
-      }
-
-      try {
-        const tokenRes = await net.fetch('https://github.com/login/oauth/access_token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ client_id: clientId, code, redirect_uri: redirectUri }),
-        });
-        const data = (await tokenRes.json()) as {
-          access_token?: string;
-          error?: string;
-          error_description?: string;
-        };
-
-        const html = `<html><body style="font-family:sans-serif;text-align:center;padding:60px">
-          <h2>${data.error ? '❌ Authorization failed' : '✅ Authorization successful'}</h2>
-          <p>${data.error ? data.error_description || data.error : 'You can close this tab and return to Goose.'}</p>
-          <script>window.close();</script>
-        </body></html>`;
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(html);
-        server.close();
-
-        if (data.error || !data.access_token) {
-          resolve({ error: data.error_description || data.error || 'No access token returned' });
-        } else {
-          const senderWindow = BrowserWindow.fromWebContents(event.sender);
-          if (senderWindow) senderWindow.focus();
-          resolve({ token: data.access_token });
-        }
-      } catch (err) {
-        res.writeHead(500);
-        res.end('Token exchange failed');
-        server.close();
-        resolve({ error: err instanceof Error ? err.message : 'Token exchange failed' });
-      }
+  try {
+    const res = await net.fetch('https://github.com/login/device/code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ client_id: clientId }),
     });
+    const data = (await res.json()) as {
+      device_code?: string;
+      user_code?: string;
+      verification_uri?: string;
+      expires_in?: number;
+      interval?: number;
+      error?: string;
+      error_description?: string;
+    };
+    if (data.error || !data.device_code) {
+      return { error: data.error_description || data.error || 'Failed to start device flow' };
+    }
+    await shell.openExternal(data.verification_uri!);
+    return {
+      device_code: data.device_code,
+      user_code: data.user_code!,
+      verification_uri: data.verification_uri!,
+      expires_in: data.expires_in ?? 900,
+      interval: data.interval ?? 5,
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to start device flow' };
+  }
+});
 
-    server.listen(0, '127.0.0.1', () => {
-      const port = (server.address() as { port: number }).port;
-      redirectUri = `http://localhost:${port}/callback`;
-      const state = Math.random().toString(36).slice(2);
-      const authUrl =
-        `https://github.com/login/oauth/authorize` +
-        `?client_id=${clientId}` +
-        `&scope=${encodeURIComponent('repo,read:user')}` +
-        `&state=${state}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}`;
-      log.info('[GitHub OAuth] Opening browser for OAuth:', authUrl);
-      shell.openExternal(authUrl);
+// Single-shot poll — renderer drives the loop so the UI can react to each result
+ipcMain.handle('poll-github-device-token-once', async (_event, deviceCode: string) => {
+  const clientId = process.env.VITE_GITHUB_CLIENT_ID || process.env.GITHUB_CLIENT_ID;
+  if (!clientId) {
+    return { error: 'GitHub Client ID not configured' };
+  }
+
+  const parseGitHubTokenResponse = (
+    text: string
+  ): { access_token?: string; error?: string; error_description?: string; interval?: number } => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      const params = new URLSearchParams(text);
+      return {
+        access_token: params.get('access_token') ?? undefined,
+        error: params.get('error') ?? undefined,
+        error_description: params.get('error_description') ?? undefined,
+        interval: params.get('interval') ? Number(params.get('interval')) : undefined,
+      };
+    }
+  };
+
+  try {
+    const res = await net.fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        client_id: clientId,
+        device_code: deviceCode,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      }),
     });
-
-    server.on('error', (err) => {
-      resolve({ error: `OAuth server error: ${err.message}` });
-    });
-
-    setTimeout(
-      () => {
-        server.close();
-        resolve({ error: 'OAuth timed out after 5 minutes' });
-      },
-      5 * 60 * 1000
-    );
-  });
+    const text = await res.text();
+    log.info('[GitHub Device Flow] Poll response:', text.slice(0, 200));
+    return parseGitHubTokenResponse(text);
+  } catch (err) {
+    log.warn('[GitHub Device Flow] Poll network error:', err);
+    return {
+      error: 'network_error',
+      error_description: err instanceof Error ? err.message : 'Network error',
+    };
+  }
 });
 
 ipcMain.handle('directory-chooser', async () => {

@@ -15,19 +15,32 @@ import {
   Puzzle,
   Loader2,
   GitBranch,
+  Key,
+  ArrowLeft,
+  ArrowRight,
 } from 'lucide-react';
 import { MainPanelLayout } from '../Layout/MainPanelLayout';
 import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { Skeleton } from '../ui/skeleton';
+import { createSession } from '../../sessions';
+import { getInitialWorkingDir } from '../../utils/workingDir';
+import { UserInput } from '../../types/message';
+import { useModelAndProvider } from '../ModelAndProviderContext';
+import { agentAddExtension } from '../../api';
+import BaseChat from '../BaseChat';
+import { ChatType } from '../../types/chat';
+import { SwitchModelModal } from '../settings/models/subcomponents/SwitchModelModal';
+import { useNavigation } from '../../hooks/useNavigation';
 
 const GITHUB_TOKEN_KEY = 'copilot_github_token';
 const GITHUB_USER_KEY = 'copilot_github_user';
 const TASKS_KEY = 'copilot_tasks';
+const SELECTED_REPO_KEY = 'copilot_selected_repo';
 
 type TaskStatus = 'open' | 'merged' | 'closed' | 'review' | 'in_progress';
 type TaskTab = 'active' | 'archived' | 'suggested';
-type MainTab = 'dashboard' | 'integrations' | 'settings';
+type MainTab = 'dashboard' | 'integrations' | 'automation' | 'insights' | 'settings';
 
 interface GitHubUser {
   login: string;
@@ -68,6 +81,19 @@ async function fetchGitHubUser(token: string): Promise<GitHubUser> {
   });
   if (!res.ok) throw new Error(`GitHub API error ${res.status}`);
   return res.json() as Promise<GitHubUser>;
+}
+
+async function fetchBranches(token: string, fullName: string): Promise<string[]> {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${fullName}/branches?per_page=100`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
+    });
+    if (!res.ok) return ['main'];
+    const data = (await res.json()) as { name: string }[];
+    return data.map((b) => b.name);
+  } catch {
+    return ['main'];
+  }
 }
 
 async function fetchGitHubRepos(token: string): Promise<GitHubRepo[]> {
@@ -219,7 +245,69 @@ function RepoSelector({
   );
 }
 
+function BranchSelector({
+  branches,
+  selected,
+  onSelect,
+}: {
+  branches: string[];
+  selected: string;
+  onSelect: (b: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((p) => !p)}
+        className="flex items-center gap-1 text-xs px-2 py-1 rounded-md text-text-secondary hover:bg-background-secondary transition-colors"
+      >
+        <GitBranch className="w-3 h-3 shrink-0" />
+        <span className="max-w-[120px] truncate">{selected}</span>
+        <ChevronDown className="w-3 h-3 shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute bottom-full mb-1 left-0 w-52 bg-background-primary border border-border rounded-lg shadow-lg z-50 overflow-hidden">
+          <ScrollArea className="max-h-48">
+            {branches.map((b) => (
+              <button
+                key={b}
+                onClick={() => {
+                  onSelect(b);
+                  setOpen(false);
+                }}
+                className="w-full text-left px-3 py-2 text-xs hover:bg-background-secondary flex items-center justify-between gap-2"
+              >
+                <span className="truncate font-mono">{b}</span>
+                {selected === b && <Check className="w-3 h-3 text-green-500 shrink-0" />}
+              </button>
+            ))}
+          </ScrollArea>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// No TaskChat needed — we use BaseChat directly
+
 export default function CopilotView() {
+  const { currentModel } = useModelAndProvider();
+  const [, setChatState] = useState<ChatType | null>(null);
+  const [activeTaskChat, setActiveTaskChat] = useState<{
+    sessionId: string;
+    task: Task;
+    initialMessage: UserInput;
+  } | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(GITHUB_TOKEN_KEY));
   const [user, setUser] = useState<GitHubUser | null>(() => {
     const stored = localStorage.getItem(GITHUB_USER_KEY);
@@ -229,16 +317,57 @@ export default function CopilotView() {
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deviceCode, setDeviceCode] = useState<{
+    user_code: string;
+    verification_uri: string;
+    device_code: string;
+  } | null>(null);
+  const [pollStatus, setPollStatus] = useState<string | null>(null);
+  const pollAbortRef = useRef<boolean>(false);
+  const [patInput, setPatInput] = useState('');
+  const [showPat, setShowPat] = useState(false);
+  const [loadingPat, setLoadingPat] = useState(false);
 
   const [mainTab, setMainTab] = useState<MainTab>('dashboard');
   const [taskTab, setTaskTab] = useState<TaskTab>('active');
-  const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null);
+  const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(() => {
+    const stored = localStorage.getItem(SELECTED_REPO_KEY);
+    return stored ? (JSON.parse(stored) as GitHubRepo) : null;
+  });
+
+  const selectRepo = useCallback(
+    (repo: GitHubRepo | null) => {
+      setSelectedRepo(repo);
+      setSelectedBranch('main');
+      setBranches(['main']);
+      if (repo) {
+        localStorage.setItem(SELECTED_REPO_KEY, JSON.stringify(repo));
+        if (token) {
+          fetchBranches(token, repo.full_name).then((bs) => {
+            setBranches(bs);
+            // Use the repo's default branch if available
+            const defaultBranch = bs.find((b) => b === 'main') ?? bs[0] ?? 'main';
+            setSelectedBranch(defaultBranch);
+          });
+        }
+      } else {
+        localStorage.removeItem(SELECTED_REPO_KEY);
+      }
+    },
+    [token]
+  );
   const [taskInput, setTaskInput] = useState('');
   const [tasks, setTasks] = useState<Task[]>(() => {
     const stored = localStorage.getItem(TASKS_KEY);
     return stored ? (JSON.parse(stored) as Task[]) : [];
   });
   const [creatingTask, setCreatingTask] = useState(false);
+  const [creatingTaskPhase, setCreatingTaskPhase] = useState<'session' | 'github' | null>(null);
+  const [inputFocused, setInputFocused] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState('main');
+  const [branches, setBranches] = useState<string[]>(['main']);
+  const [showModelModal, setShowModelModal] = useState(false);
+  const setView = useNavigation();
 
   const saveTasks = useCallback((t: Task[]) => {
     setTasks(t);
@@ -259,6 +388,21 @@ export default function CopilotView() {
     try {
       const data = await fetchGitHubRepos(tok);
       setRepos(data);
+      // Restore previously selected repo if it's still accessible
+      setSelectedRepo((prev) => {
+        if (!prev) return null;
+        const stillExists = data.find((r) => r.id === prev.id);
+        if (!stillExists) {
+          localStorage.removeItem(SELECTED_REPO_KEY);
+          return null;
+        }
+        // Fetch branches for the restored repo
+        fetchBranches(tok, stillExists.full_name).then((bs) => {
+          setBranches(bs);
+          setSelectedBranch((b) => (bs.includes(b) ? b : (bs[0] ?? 'main')));
+        });
+        return stillExists;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load repositories');
     } finally {
@@ -272,28 +416,117 @@ export default function CopilotView() {
     }
   }, [token, repos.length, loadingRepos, loadRepos]);
 
-  const startOAuth = async () => {
+  const startDeviceFlow = async () => {
+    // Abort any previous poll loop
+    pollAbortRef.current = true;
+    await new Promise((r) => setTimeout(r, 50));
+    pollAbortRef.current = false;
+
     setLoadingAuth(true);
     setError(null);
+    setDeviceCode(null);
+    setPollStatus(null);
     try {
-      const result = await window.electron.startGitHubOAuth();
-      if ('error' in result) throw new Error(result.error);
-      const githubUser = await fetchGitHubUser(result.token);
-      localStorage.setItem(GITHUB_TOKEN_KEY, result.token);
-      localStorage.setItem(GITHUB_USER_KEY, JSON.stringify(githubUser));
-      setToken(result.token);
-      setUser(githubUser);
-      await loadRepos(result.token);
+      const flow = await window.electron.startGitHubDeviceFlow();
+      if ('error' in flow) throw new Error(flow.error);
+
+      setDeviceCode({
+        user_code: flow.user_code,
+        verification_uri: flow.verification_uri,
+        device_code: flow.device_code,
+      });
+
+      // Renderer-driven poll loop — lets us show live status per response
+      let intervalSeconds = flow.interval ?? 5;
+      const deadline = Date.now() + 10 * 60 * 1000;
+
+      while (Date.now() < deadline) {
+        if (pollAbortRef.current) return;
+
+        setPollStatus(`Checking… (next in ${intervalSeconds}s)`);
+        await new Promise((r) => setTimeout(r, intervalSeconds * 1000));
+
+        if (pollAbortRef.current) return;
+
+        const data = await window.electron.pollGitHubDeviceTokenOnce(flow.device_code);
+
+        if (data.access_token) {
+          setPollStatus('Authorized! Loading your profile…');
+          let githubUser: GitHubUser;
+          try {
+            githubUser = await fetchGitHubUser(data.access_token);
+          } catch {
+            githubUser = { login: 'github-user', name: null, avatar_url: '', html_url: '' };
+          }
+          localStorage.setItem(GITHUB_TOKEN_KEY, data.access_token);
+          localStorage.setItem(GITHUB_USER_KEY, JSON.stringify(githubUser));
+          setToken(data.access_token);
+          setUser(githubUser);
+          setDeviceCode(null);
+          setPollStatus(null);
+          await loadRepos(data.access_token);
+          return;
+        }
+
+        if (data.error === 'slow_down') {
+          intervalSeconds = data.interval ?? intervalSeconds + 5;
+          setPollStatus(`GitHub rate limit — waiting ${intervalSeconds}s before next check…`);
+          continue;
+        }
+
+        if (data.error === 'authorization_pending') {
+          setPollStatus('Waiting for you to authorize in the browser…');
+          continue;
+        }
+
+        if (data.error === 'network_error') {
+          // Transient — keep trying
+          continue;
+        }
+
+        throw new Error(data.error_description || data.error || 'Authentication failed');
+      }
+
+      throw new Error('Timed out after 10 minutes');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Authentication failed');
+      setDeviceCode(null);
+      setPollStatus(null);
     } finally {
       setLoadingAuth(false);
+    }
+  };
+
+  const signInWithPat = async () => {
+    const pat = patInput.trim();
+    if (!pat) return;
+    setLoadingPat(true);
+    setError(null);
+    try {
+      let githubUser: GitHubUser;
+      try {
+        githubUser = await fetchGitHubUser(pat);
+      } catch {
+        githubUser = { login: 'github-user', name: null, avatar_url: '', html_url: '' };
+      }
+      localStorage.setItem(GITHUB_TOKEN_KEY, pat);
+      localStorage.setItem(GITHUB_USER_KEY, JSON.stringify(githubUser));
+      setToken(pat);
+      setUser(githubUser);
+      setPatInput('');
+      setShowPat(false);
+      await loadRepos(pat);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid token');
+    } finally {
+      setLoadingPat(false);
     }
   };
 
   const createTask = useCallback(() => {
     if (!taskInput.trim() || !selectedRepo) return;
     setCreatingTask(true);
+    setCreatingTaskPhase('session');
 
     const newTask: Task = {
       id: Date.now().toString(),
@@ -306,16 +539,50 @@ export default function CopilotView() {
 
     const updated = [newTask, ...tasks];
     saveTasks(updated);
-    setTaskInput('');
-    setCreatingTask(false);
 
-    window.electron.createChatWindow({
-      query:
-        `You are working on the GitHub repository: ${selectedRepo.full_name} (${selectedRepo.html_url})\n\n` +
-        `Task: ${taskInput.trim()}\n\n` +
-        `Please help me with this task. You can create PRs, review code, and perform other GitHub operations as needed.`,
+    const query =
+      `You are working on the GitHub repository: ${selectedRepo.full_name} (${selectedRepo.html_url}), branch: ${selectedBranch}\n\n` +
+      `Task: ${taskInput.trim()}\n\n` +
+      `You have access to GitHub tools. Use them to read PRs, post comments, create branches, list issues, and perform any other GitHub operations needed to complete this task.`;
+
+    setTaskInput('');
+
+    createSession(getInitialWorkingDir()).then(async (session) => {
+      // Hot-add GitHub MCP with the user's token so Goose can call the GitHub API
+      if (token) {
+        setCreatingTaskPhase('github');
+        try {
+          await agentAddExtension({
+            body: {
+              session_id: session.id,
+              config: {
+                type: 'stdio',
+                name: 'github',
+                description: 'GitHub tools — read PRs, post reviews, manage issues and branches',
+                cmd: 'npx',
+                args: ['-y', '@github/mcp-server'],
+                envs: { GITHUB_PERSONAL_ACCESS_TOKEN: token },
+                timeout: 300,
+                bundled: false,
+              },
+            },
+          });
+        } catch (err) {
+          // Non-fatal: session still works, just without GitHub tools
+          console.warn('[Copilot] Failed to add GitHub MCP extension:', err);
+        }
+      }
+
+      setCreatingTask(false);
+      setCreatingTaskPhase(null);
+      setChatState(null);
+      setActiveTaskChat({
+        sessionId: session.id,
+        task: newTask,
+        initialMessage: { msg: query, images: [] },
+      });
     });
-  }, [taskInput, selectedRepo, tasks, saveTasks]);
+  }, [taskInput, selectedRepo, selectedBranch, tasks, saveTasks, token]);
 
   const activeTasks = tasks.filter(
     (t) => t.status === 'in_progress' || t.status === 'open' || t.status === 'review'
@@ -333,6 +600,41 @@ export default function CopilotView() {
   const displayedTasks =
     taskTab === 'active' ? activeTasks : taskTab === 'archived' ? archivedTasks : suggestedTasks;
 
+  if (activeTaskChat) {
+    return (
+      <MainPanelLayout>
+        <BaseChat
+          sessionId={activeTaskChat.sessionId}
+          initialMessage={activeTaskChat.initialMessage}
+          isActiveSession={true}
+          suppressEmptyState={true}
+          setChat={setChatState}
+          renderHeader={() => (
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActiveTaskChat(null)}
+                className="p-1.5 h-auto"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate text-text-primary">
+                  {activeTaskChat.task.title}
+                </p>
+                <p className="text-xs text-text-secondary flex items-center gap-1">
+                  <Github className="w-3 h-3" />
+                  {activeTaskChat.task.repo}
+                </p>
+              </div>
+            </div>
+          )}
+        />
+      </MainPanelLayout>
+    );
+  }
+
   if (!token) {
     return (
       <MainPanelLayout>
@@ -344,27 +646,117 @@ export default function CopilotView() {
               Sign in with GitHub to manage repositories, create PRs, and review code with Goose.
             </p>
           </div>
+
           {error && (
             <div className="flex items-center gap-2 text-red-500 text-sm bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-lg max-w-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
-          <Button
-            onClick={startOAuth}
-            disabled={loadingAuth}
-            className="flex items-center gap-2 px-6"
-          >
-            {loadingAuth ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <Github className="w-4 h-4" />
-            )}
-            {loadingAuth ? 'Signing in…' : 'Sign in with GitHub'}
-          </Button>
-          <p className="text-xs opacity-50 max-w-sm text-center">
-            This will open your browser to authorize Goose to manage your repositories.
-          </p>
+
+          {deviceCode ? (
+            <div className="flex flex-col items-center gap-3 w-full max-w-sm">
+              <p className="text-sm text-text-secondary text-center">
+                Enter this code at{' '}
+                <button
+                  className="underline text-text-primary"
+                  onClick={() => window.electron.openExternal(deviceCode.verification_uri)}
+                >
+                  {deviceCode.verification_uri}
+                </button>
+              </p>
+              <div className="flex items-center gap-2 px-6 py-3 bg-background-secondary border border-border rounded-xl">
+                <span className="font-mono text-2xl font-bold tracking-widest text-text-primary select-all">
+                  {deviceCode.user_code}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-text-secondary">
+                <RefreshCw className="w-3 h-3 animate-spin" />
+                {pollStatus ?? 'Waiting for you to authorize in the browser…'}
+              </div>
+            </div>
+          ) : showPat ? (
+            <div className="flex flex-col gap-3 w-full max-w-sm">
+              <p className="text-xs text-text-secondary text-center">
+                Create a token at{' '}
+                <button
+                  className="underline text-text-primary"
+                  onClick={() =>
+                    window.electron.openExternal(
+                      'https://github.com/settings/tokens/new?scopes=repo,read:user&description=Goose'
+                    )
+                  }
+                >
+                  github.com/settings/tokens
+                </button>{' '}
+                with <code className="text-xs bg-background-secondary px-1 rounded">repo</code>{' '}
+                scope, then paste it below.
+              </p>
+              <input
+                type="password"
+                value={patInput}
+                onChange={(e) => setPatInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && signInWithPat()}
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                className="w-full text-sm px-3 py-2 bg-background-secondary border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-border font-mono"
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowPat(false);
+                    setPatInput('');
+                    setError(null);
+                  }}
+                  className="flex-1 text-xs"
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={signInWithPat}
+                  disabled={!patInput.trim() || loadingPat}
+                  size="sm"
+                  className="flex-1 text-xs flex items-center gap-1.5"
+                >
+                  {loadingPat && <RefreshCw className="w-3 h-3 animate-spin" />}
+                  Connect
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 w-full max-w-xs">
+              <Button
+                onClick={startDeviceFlow}
+                disabled={loadingAuth}
+                className="w-full flex items-center justify-center gap-2"
+              >
+                {loadingAuth ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Github className="w-4 h-4" />
+                )}
+                {loadingAuth ? 'Starting…' : 'Sign in with GitHub'}
+              </Button>
+              <div className="flex items-center gap-2 w-full">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-xs text-text-secondary">or</span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowPat(true);
+                  setError(null);
+                }}
+                className="w-full flex items-center justify-center gap-2 text-sm"
+              >
+                <Key className="w-4 h-4" />
+                Use a Personal Access Token
+              </Button>
+            </div>
+          )}
         </div>
       </MainPanelLayout>
     );
@@ -372,25 +764,43 @@ export default function CopilotView() {
 
   return (
     <MainPanelLayout>
+      {showModelModal && (
+        <SwitchModelModal
+          sessionId={null}
+          onClose={() => setShowModelModal(false)}
+          setView={setView}
+          onModelSelected={() => setShowModelModal(false)}
+        />
+      )}
       <div className="flex flex-col h-full min-h-0">
         {/* Top nav tabs */}
         <div className="flex items-center justify-between px-6 pt-12 pb-0 border-b border-border">
           <div className="flex items-center gap-0">
-            {(['dashboard', 'integrations', 'settings'] as MainTab[]).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setMainTab(tab)}
-                className={`px-4 py-3 text-sm capitalize font-medium border-b-2 transition-colors ${
-                  mainTab === tab
-                    ? 'border-text-primary text-text-primary'
-                    : 'border-transparent text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
+            {(['dashboard', 'integrations', 'automation', 'insights', 'settings'] as MainTab[]).map(
+              (tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setMainTab(tab)}
+                  className={`px-4 py-3 text-sm capitalize font-medium border-b-2 transition-colors ${
+                    mainTab === tab
+                      ? 'border-text-primary text-text-primary'
+                      : 'border-transparent text-text-secondary hover:text-text-primary'
+                  }`}
+                >
+                  {tab}
+                </button>
+              )
+            )}
           </div>
           <div className="flex items-center gap-2 pb-2">
+            {currentModel && (
+              <span
+                className="text-[10px] px-2 py-0.5 rounded-full bg-background-secondary border border-border text-text-secondary font-mono truncate max-w-[120px]"
+                title={currentModel}
+              >
+                {currentModel}
+              </span>
+            )}
             {user?.avatar_url && (
               <img src={user.avatar_url} alt={user.login} className="w-6 h-6 rounded-full" />
             )}
@@ -426,40 +836,86 @@ export default function CopilotView() {
               </Button>
             </div>
 
-            {/* Task creation card */}
-            <div className="border border-border rounded-xl p-4 bg-background-primary space-y-3">
+            {/* Task creation card — styled like ChatInput */}
+            <div
+              className={`rounded-2xl border bg-background-primary transition-colors ${
+                inputFocused ? 'border-blue-500/70' : 'border-border'
+              }`}
+            >
               <textarea
                 value={taskInput}
                 onChange={(e) => setTaskInput(e.target.value)}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) createTask();
+                  if (e.key === 'Enter' && !e.shiftKey && taskInput.trim() && selectedRepo) {
+                    e.preventDefault();
+                    createTask();
+                  }
                 }}
-                placeholder="Assign a task to Goose…"
-                rows={2}
-                className="w-full text-sm bg-transparent resize-none focus:outline-none placeholder:text-text-secondary/50"
+                placeholder="Plan a new task for Goose to handle… (select a repo below)"
+                rows={3}
+                disabled={creatingTask}
+                className="w-full text-sm bg-transparent resize-none focus:outline-none px-4 pt-4 pb-2 placeholder:text-text-secondary/50 disabled:opacity-50"
               />
-              <div className="flex items-center justify-between">
+              {/* Bottom bar */}
+              <div className="flex items-center gap-1 px-3 pb-3">
+                {/* Repo selector */}
                 <RepoSelector
                   repos={repos}
                   selected={selectedRepo}
-                  onSelect={setSelectedRepo}
+                  onSelect={selectRepo}
                   loading={loadingRepos}
                 />
-                <Button
+                {/* Branch selector */}
+                {selectedRepo && (
+                  <BranchSelector
+                    branches={branches}
+                    selected={selectedBranch}
+                    onSelect={setSelectedBranch}
+                  />
+                )}
+                {/* Model pill — click to change */}
+                {currentModel && (
+                  <button
+                    onClick={() => setShowModelModal(true)}
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded-md text-text-secondary hover:bg-background-secondary transition-colors max-w-[160px]"
+                    title="Change model"
+                  >
+                    <span className="text-[10px]">A✳︎</span>
+                    <span className="truncate">{currentModel}</span>
+                    <ChevronDown className="w-3 h-3 shrink-0" />
+                  </button>
+                )}
+                {/* Send button */}
+                <button
                   onClick={createTask}
                   disabled={!taskInput.trim() || !selectedRepo || creatingTask}
-                  size="sm"
-                  className="flex items-center gap-1.5 text-xs"
+                  className="ml-auto w-8 h-8 rounded-full flex items-center justify-center transition-colors bg-text-primary text-background-primary disabled:opacity-30 disabled:cursor-not-allowed hover:opacity-90"
+                  title={
+                    creatingTaskPhase === 'github'
+                      ? 'Loading GitHub tools…'
+                      : creatingTaskPhase === 'session'
+                        ? 'Starting session…'
+                        : 'Start task'
+                  }
                 >
                   {creatingTask ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <Plus className="w-3.5 h-3.5" />
+                    <ArrowRight className="w-4 h-4" />
                   )}
-                  Create a Task
-                </Button>
+                </button>
               </div>
             </div>
+
+            {/* Loading phase status */}
+            {creatingTaskPhase && (
+              <div className="flex items-center gap-2 text-xs text-text-secondary px-1">
+                <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                {creatingTaskPhase === 'session' ? 'Starting session…' : 'Loading GitHub tools…'}
+              </div>
+            )}
 
             {error && (
               <div className="flex items-center gap-2 text-red-500 text-sm bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
@@ -611,6 +1067,234 @@ export default function CopilotView() {
               <Puzzle className="w-8 h-8 opacity-40" />
               <p className="text-sm">More integrations coming soon</p>
             </div>
+          </div>
+        )}
+
+        {/* Automation tab */}
+        {mainTab === 'automation' && (
+          <div className="flex flex-col flex-1 min-h-0 px-6 py-5 gap-4">
+            <div>
+              <h1 className="text-xl font-semibold text-text-primary">Automation</h1>
+              <p className="text-sm text-text-secondary mt-0.5">
+                Trigger Goose automatically on GitHub events
+              </p>
+            </div>
+
+            {/* PR Review trigger */}
+            <div className="border border-border rounded-xl divide-y divide-border overflow-hidden">
+              <div className="flex items-center gap-4 p-4">
+                <div className="w-10 h-10 rounded-lg bg-background-secondary flex items-center justify-center shrink-0">
+                  <GitPullRequest className="w-5 h-5 text-text-secondary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-text-primary">Auto-review on PR open</p>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Goose posts a code review comment whenever a pull request is opened or updated
+                    in the selected repository.
+                  </p>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 font-medium shrink-0">
+                  Coming soon
+                </span>
+              </div>
+
+              <div className="flex items-center gap-4 p-4">
+                <div className="w-10 h-10 rounded-lg bg-background-secondary flex items-center justify-center shrink-0">
+                  <GitMerge className="w-5 h-5 text-text-secondary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-text-primary">Auto-merge on approval</p>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Automatically merge PRs once Goose's review passes and all checks are green.
+                  </p>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 font-medium shrink-0">
+                  Coming soon
+                </span>
+              </div>
+
+              <div className="flex items-center gap-4 p-4">
+                <div className="w-10 h-10 rounded-lg bg-background-secondary flex items-center justify-center shrink-0">
+                  <Eye className="w-5 h-5 text-text-secondary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-text-primary">Issue triage</p>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Goose labels and responds to new issues with an initial triage summary.
+                  </p>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 font-medium shrink-0">
+                  Coming soon
+                </span>
+              </div>
+            </div>
+
+            {/* Webhook setup hint */}
+            <div className="border border-dashed border-border rounded-xl p-5 flex flex-col gap-2">
+              <p className="text-sm font-medium text-text-primary flex items-center gap-2">
+                <Settings className="w-4 h-4 text-text-secondary" />
+                How to enable automations
+              </p>
+              <ol className="text-xs text-text-secondary space-y-1 list-decimal list-inside">
+                <li>
+                  Go to your GitHub App settings and add a webhook URL pointing to your Goose
+                  server.
+                </li>
+                <li>Select the events you want to trigger (Pull requests, Issues, etc.).</li>
+                <li>Goose will listen and respond automatically whenever those events fire.</li>
+              </ol>
+              <button
+                onClick={() => window.electron.openExternal('https://github.com/settings/apps')}
+                className="mt-1 text-xs text-blue-500 hover:underline self-start"
+              >
+                Open GitHub App settings →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Insights tab */}
+        {mainTab === 'insights' && (
+          <div className="flex flex-col flex-1 min-h-0 px-6 py-5 gap-5">
+            <div>
+              <h1 className="text-xl font-semibold text-text-primary">Insights</h1>
+              <p className="text-sm text-text-secondary mt-0.5">
+                Activity and metrics across your repositories
+              </p>
+            </div>
+
+            {/* Summary cards */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="border border-border rounded-xl p-4 flex flex-col gap-1">
+                <p className="text-[10px] uppercase tracking-widest text-text-secondary font-semibold">
+                  Tasks created
+                </p>
+                <p className="text-3xl font-semibold text-text-primary">{tasks.length}</p>
+                <p className="text-xs text-text-secondary">all time</p>
+              </div>
+              <div className="border border-border rounded-xl p-4 flex flex-col gap-1">
+                <p className="text-[10px] uppercase tracking-widest text-text-secondary font-semibold">
+                  Active
+                </p>
+                <p className="text-3xl font-semibold text-green-600">
+                  {
+                    tasks.filter(
+                      (t) =>
+                        t.status === 'in_progress' || t.status === 'open' || t.status === 'review'
+                    ).length
+                  }
+                </p>
+                <p className="text-xs text-text-secondary">in progress or open</p>
+              </div>
+              <div className="border border-border rounded-xl p-4 flex flex-col gap-1">
+                <p className="text-[10px] uppercase tracking-widest text-text-secondary font-semibold">
+                  Completed
+                </p>
+                <p className="text-3xl font-semibold text-purple-600">
+                  {tasks.filter((t) => t.status === 'merged').length}
+                </p>
+                <p className="text-xs text-text-secondary">merged</p>
+              </div>
+            </div>
+
+            {/* Repos worked on */}
+            <div className="border border-border rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-border">
+                <p className="text-sm font-medium text-text-primary">Repositories worked on</p>
+              </div>
+              {(() => {
+                const repoCounts = tasks.reduce<Record<string, { count: number; repoUrl: string }>>(
+                  (acc, t) => {
+                    acc[t.repo] = { count: (acc[t.repo]?.count ?? 0) + 1, repoUrl: t.repoUrl };
+                    return acc;
+                  },
+                  {}
+                );
+                const sorted = Object.entries(repoCounts).sort((a, b) => b[1].count - a[1].count);
+                if (sorted.length === 0) {
+                  return (
+                    <div className="px-4 py-8 text-center text-xs text-text-secondary">
+                      No tasks yet — create one from the dashboard.
+                    </div>
+                  );
+                }
+                return sorted.map(([repo, { count, repoUrl }]) => (
+                  <div
+                    key={repo}
+                    className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0 hover:bg-background-secondary transition-colors"
+                  >
+                    <Github className="w-4 h-4 text-text-secondary shrink-0" />
+                    <button
+                      onClick={() => window.electron.openExternal(repoUrl)}
+                      className="flex-1 text-sm text-text-primary text-left hover:underline truncate"
+                    >
+                      {repo}
+                    </button>
+                    <span className="text-xs text-text-secondary shrink-0">
+                      {count} task{count !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {/* Status breakdown */}
+            {tasks.length > 0 && (
+              <div className="border border-border rounded-xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-border">
+                  <p className="text-sm font-medium text-text-primary">Status breakdown</p>
+                </div>
+                <div className="p-4 space-y-3">
+                  {(
+                    [
+                      { label: 'In Progress', key: 'in_progress', color: 'bg-blue-500' },
+                      { label: 'Open', key: 'open', color: 'bg-green-500' },
+                      { label: 'In Review', key: 'review', color: 'bg-yellow-500' },
+                      { label: 'Merged', key: 'merged', color: 'bg-purple-500' },
+                      { label: 'Closed', key: 'closed', color: 'bg-gray-400' },
+                    ] as { label: string; key: TaskStatus; color: string }[]
+                  ).map(({ label, key, color }) => {
+                    const count = tasks.filter((t) => t.status === key).length;
+                    const pct = tasks.length > 0 ? Math.round((count / tasks.length) * 100) : 0;
+                    if (count === 0) return null;
+                    return (
+                      <div key={key} className="flex items-center gap-3">
+                        <p className="text-xs text-text-secondary w-20 shrink-0">{label}</p>
+                        <div className="flex-1 h-2 bg-background-secondary rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${color}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-text-secondary w-8 text-right shrink-0">
+                          {count}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Connected repo */}
+            {selectedRepo && (
+              <div className="border border-border rounded-xl p-4 flex items-center gap-3">
+                <Github className="w-4 h-4 text-text-secondary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-text-secondary">Active repository</p>
+                  <button
+                    onClick={() => window.electron.openExternal(selectedRepo.html_url)}
+                    className="text-sm font-medium text-text-primary hover:underline truncate block"
+                  >
+                    {selectedRepo.full_name}
+                  </button>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-text-secondary">
+                  <GitBranch className="w-3.5 h-3.5" />
+                  {selectedBranch}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

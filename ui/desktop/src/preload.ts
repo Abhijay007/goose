@@ -164,7 +164,22 @@ type ElectronAPI = {
   isUsingGitHubFallback: () => Promise<boolean>;
   onGitHubAuthCallback: (callback: (url: string) => void) => void;
   offGitHubAuthCallback: (callback: (url: string) => void) => void;
-  startGitHubOAuth: () => Promise<{ token: string } | { error: string }>;
+  startGitHubDeviceFlow: () => Promise<
+    | {
+        device_code: string;
+        user_code: string;
+        verification_uri: string;
+        expires_in: number;
+        interval: number;
+      }
+    | { error: string }
+  >;
+  pollGitHubDeviceTokenOnce: (deviceCode: string) => Promise<{
+    access_token?: string;
+    error?: string;
+    error_description?: string;
+    interval?: number;
+  }>;
   // Recipe warning functions
   closeWindow: () => void;
   hasAcceptedRecipeBefore: (recipe: Recipe) => Promise<boolean>;
@@ -330,7 +345,9 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.removeAllListeners('github-auth-callback');
     void callback;
   },
-  startGitHubOAuth: () => ipcRenderer.invoke('start-github-oauth'),
+  startGitHubDeviceFlow: () => ipcRenderer.invoke('start-github-device-flow'),
+  pollGitHubDeviceTokenOnce: (deviceCode: string) =>
+    ipcRenderer.invoke('poll-github-device-token-once', deviceCode),
 };
 
 const appConfigAPI: AppConfigAPI = {
