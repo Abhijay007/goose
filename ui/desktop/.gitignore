@@ -11,3 +11,6 @@ src/bin/goose-npm/
 src/bin/temporal.db
 # Signing credentials
 .env.signing
+.env
+# GitHub App private key — never commit this
+*.pem

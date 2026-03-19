@@ -180,6 +180,9 @@ type ElectronAPI = {
     error_description?: string;
     interval?: number;
   }>;
+  // GitHub App bot-identity (credentials live in .env, never entered by the user)
+  getGitHubAppConfig: () => Promise<{ appId: string } | null>;
+  getGitHubInstallationToken: (owner: string) => Promise<{ token: string; expiresAt: string } | { error: string }>;
   // Recipe warning functions
   closeWindow: () => void;
   hasAcceptedRecipeBefore: (recipe: Recipe) => Promise<boolean>;
@@ -348,6 +351,9 @@ const electronAPI: ElectronAPI = {
   startGitHubDeviceFlow: () => ipcRenderer.invoke('start-github-device-flow'),
   pollGitHubDeviceTokenOnce: (deviceCode: string) =>
     ipcRenderer.invoke('poll-github-device-token-once', deviceCode),
+  getGitHubAppConfig: () => ipcRenderer.invoke('get-github-app-config'),
+  getGitHubInstallationToken: (owner: string) =>
+    ipcRenderer.invoke('get-github-installation-token', owner),
 };
 
 const appConfigAPI: AppConfigAPI = {

@@ -23,20 +23,16 @@ import { MainPanelLayout } from '../Layout/MainPanelLayout';
 import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { Skeleton } from '../ui/skeleton';
-import { createSession } from '../../sessions';
-import { getInitialWorkingDir } from '../../utils/workingDir';
-import { UserInput } from '../../types/message';
 import { useModelAndProvider } from '../ModelAndProviderContext';
-import { agentAddExtension } from '../../api';
-import BaseChat from '../BaseChat';
-import { ChatType } from '../../types/chat';
 import { SwitchModelModal } from '../settings/models/subcomponents/SwitchModelModal';
 import { useNavigation } from '../../hooks/useNavigation';
+import TaskRunView from './TaskRunView';
 
 const GITHUB_TOKEN_KEY = 'copilot_github_token';
 const GITHUB_USER_KEY = 'copilot_github_user';
 const TASKS_KEY = 'copilot_tasks';
 const SELECTED_REPO_KEY = 'copilot_selected_repo';
+// Bot mode: private key is stored encrypted in main process (safeStorage), never in renderer
 
 type TaskStatus = 'open' | 'merged' | 'closed' | 'review' | 'in_progress';
 type TaskTab = 'active' | 'archived' | 'suggested';
@@ -68,11 +64,114 @@ interface Task {
   repoUrl: string;
   status: TaskStatus;
   createdAt: string;
+  sessionId?: string;
   additions?: number;
   deletions?: number;
   prUrl?: string;
   prNumber?: number;
   contributors?: number;
+}
+
+type GitHubOpType = 'create_issue' | 'list_issues' | 'agent';
+
+interface GitHubIssue {
+  number: number;
+  title: string;
+  html_url: string;
+  state: string;
+  body: string | null;
+}
+
+interface ActiveGitHubOp {
+  task: Task;
+  opType: Exclude<GitHubOpType, 'agent'>;
+  suggestedTitle: string;
+  result?: GitHubIssue;
+  issues?: GitHubIssue[];
+  error?: string;
+  running: boolean;
+}
+
+function detectGitHubOp(task: string): { opType: GitHubOpType; suggestedTitle: string } {
+  const t = task.trim();
+  // Simple "create issue" — handled with a direct form
+  if (/^(create|open|add|file|make|new)\s+(a\s+)?(new\s+)?(github\s+)?(issue|bug report|ticket)[:\s-]*/i.test(t)) {
+    const suggestedTitle = t
+      .replace(/^(create|open|add|file|make|new)\s+(a\s+)?(new\s+)?(github\s+)?(issue|bug report|ticket)[:\s-]*/i, '')
+      .trim() || t;
+    return { opType: 'create_issue', suggestedTitle };
+  }
+  // List / show issues — direct API call, no agent needed
+  if (/^(list|show|get|fetch|display)\s+(all\s+|open\s+|closed\s+)?(issues?|bugs?|tickets?)/i.test(t)) {
+    return { opType: 'list_issues', suggestedTitle: t };
+  }
+  // Everything else — PR creation, code review, bug fix, feature implementation → agent
+  return { opType: 'agent', suggestedTitle: t };
+}
+
+async function githubCreateIssue(
+  token: string,
+  repo: string,
+  title: string,
+  body: string
+): Promise<GitHubIssue> {
+  const res = await fetch(`https://api.github.com/repos/${repo}/issues`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ title, body }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err.message ?? `GitHub API error ${res.status}`);
+  }
+  return res.json() as Promise<GitHubIssue>;
+}
+
+async function fetchGitHubIssues(
+  token: string,
+  repo: string,
+  state: 'open' | 'closed' | 'all' = 'open'
+): Promise<GitHubIssue[]> {
+  const res = await fetch(
+    `https://api.github.com/repos/${repo}/issues?state=${state}&per_page=30&sort=updated`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+      },
+    }
+  );
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err.message ?? `GitHub API error ${res.status}`);
+  }
+  const data = (await res.json()) as GitHubIssue[];
+  // Filter out pull requests (GitHub returns PRs in /issues endpoint)
+  return data.filter((i) => !('pull_request' in i));
+}
+
+interface GitHubInstallation {
+  id: number;
+  app_slug: string;
+  app_id: number;
+  account: { login: string } | null;
+}
+
+async function fetchUserInstallations(token: string): Promise<GitHubInstallation[]> {
+  try {
+    const res = await fetch('https://api.github.com/user/installations?per_page=100', {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { installations: GitHubInstallation[] };
+    return data.installations ?? [];
+  } catch {
+    return [];
+  }
 }
 
 async function fetchGitHubUser(token: string): Promise<GitHubUser> {
@@ -298,16 +397,13 @@ function BranchSelector({
   );
 }
 
-// No TaskChat needed — we use BaseChat directly
+
 
 export default function CopilotView() {
   const { currentModel } = useModelAndProvider();
-  const [, setChatState] = useState<ChatType | null>(null);
-  const [activeTaskChat, setActiveTaskChat] = useState<{
-    sessionId: string;
-    task: Task;
-    initialMessage: UserInput;
-  } | null>(null);
+  // activeTaskRun: the task currently being run by the agent (TaskRunView)
+  const [activeTaskRun, setActiveTaskRun] = useState<Task | null>(null);
+  const [activeGitHubOp, setActiveGitHubOp] = useState<ActiveGitHubOp | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(GITHUB_TOKEN_KEY));
   const [user, setUser] = useState<GitHubUser | null>(() => {
     const stored = localStorage.getItem(GITHUB_USER_KEY);
@@ -327,6 +423,14 @@ export default function CopilotView() {
   const [patInput, setPatInput] = useState('');
   const [showPat, setShowPat] = useState(false);
   const [loadingPat, setLoadingPat] = useState(false);
+
+  // GitHub App installation state
+  const [appInstalled, setAppInstalled] = useState<boolean | null>(null);
+  const [appSlug, setAppSlug] = useState<string | null>(null);
+
+  // Bot-identity mode: credentials live in .env (GITHUB_APP_ID + key), never entered by user
+  const [botAppId, setBotAppId] = useState<string | null>(null);
+  const [botMode, setBotMode] = useState(false);
 
   const [mainTab, setMainTab] = useState<MainTab>('dashboard');
   const [taskTab, setTaskTab] = useState<TaskTab>('active');
@@ -361,8 +465,6 @@ export default function CopilotView() {
     const stored = localStorage.getItem(TASKS_KEY);
     return stored ? (JSON.parse(stored) as Task[]) : [];
   });
-  const [creatingTask, setCreatingTask] = useState(false);
-  const [creatingTaskPhase, setCreatingTaskPhase] = useState<'session' | 'github' | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState('main');
   const [branches, setBranches] = useState<string[]>(['main']);
@@ -373,6 +475,33 @@ export default function CopilotView() {
     setTasks(t);
     localStorage.setItem(TASKS_KEY, JSON.stringify(t));
   }, []);
+
+  // On mount, check if GitHub App credentials are configured in .env
+  useEffect(() => {
+    window.electron.getGitHubAppConfig().then((config) => {
+      if (config) {
+        setBotAppId(config.appId);
+        setBotMode(true);
+      }
+    });
+  }, []);
+
+  // Returns an installation token (bot identity) if configured, otherwise the user OAuth token.
+  // All GitHub write operations go through this so attribution is always correct.
+  const getApiToken = useCallback(
+    async (repoOwner: string): Promise<string> => {
+      if (botMode && botAppId) {
+        const result = await window.electron.getGitHubInstallationToken(repoOwner);
+        if ('token' in result) return result.token;
+        // If installation token fails, surface the error rather than silently falling back
+        throw new Error(result.error);
+      }
+      if (!token) throw new Error('Not authenticated');
+      return token;
+    },
+    [botMode, botAppId, token]
+  );
+
 
   const signOut = useCallback(() => {
     localStorage.removeItem(GITHUB_TOKEN_KEY);
@@ -386,8 +515,17 @@ export default function CopilotView() {
   const loadRepos = useCallback(async (tok: string) => {
     setLoadingRepos(true);
     try {
-      const data = await fetchGitHubRepos(tok);
+      const [data, installations] = await Promise.all([
+        fetchGitHubRepos(tok),
+        fetchUserInstallations(tok),
+      ]);
       setRepos(data);
+      if (installations.length > 0) {
+        setAppInstalled(true);
+        setAppSlug(installations[0].app_slug);
+      } else {
+        setAppInstalled(false);
+      }
       // Restore previously selected repo if it's still accessible
       setSelectedRepo((prev) => {
         if (!prev) return null;
@@ -525,113 +663,249 @@ export default function CopilotView() {
 
   const createTask = useCallback(() => {
     if (!taskInput.trim() || !selectedRepo) return;
-    setCreatingTask(true);
-    setCreatingTaskPhase('session');
 
+    const taskText = taskInput.trim();
+    const repoOwner = selectedRepo.owner.login;
     const newTask: Task = {
       id: Date.now().toString(),
-      title: taskInput.trim(),
+      title: taskText,
       repo: selectedRepo.full_name,
       repoUrl: selectedRepo.html_url,
       status: 'in_progress',
       createdAt: new Date().toISOString(),
     };
 
-    const updated = [newTask, ...tasks];
-    saveTasks(updated);
-
-    const query =
-      `You are working on the GitHub repository: ${selectedRepo.full_name} (${selectedRepo.html_url}), branch: ${selectedBranch}\n\n` +
-      `Task: ${taskInput.trim()}\n\n` +
-      `You have access to GitHub tools. Use them to read PRs, post comments, create branches, list issues, and perform any other GitHub operations needed to complete this task.`;
-
     setTaskInput('');
 
-    createSession(getInitialWorkingDir()).then(async (session) => {
-      // Hot-add GitHub MCP with the user's token so Goose can call the GitHub API
-      if (token) {
-        setCreatingTaskPhase('github');
-        try {
-          await agentAddExtension({
-            body: {
-              session_id: session.id,
-              config: {
-                type: 'stdio',
-                name: 'github',
-                description: 'GitHub tools — read PRs, post reviews, manage issues and branches',
-                cmd: 'npx',
-                args: ['-y', '@github/mcp-server'],
-                envs: { GITHUB_PERSONAL_ACCESS_TOKEN: token },
-                timeout: 300,
-                bundled: false,
-              },
-            },
-          });
-        } catch (err) {
-          // Non-fatal: session still works, just without GitHub tools
-          console.warn('[Copilot] Failed to add GitHub MCP extension:', err);
-        }
-      }
+    const { opType, suggestedTitle } = detectGitHubOp(taskText);
 
-      setCreatingTask(false);
-      setCreatingTaskPhase(null);
-      setChatState(null);
-      setActiveTaskChat({
-        sessionId: session.id,
-        task: newTask,
-        initialMessage: { msg: query, images: [] },
-      });
-    });
-  }, [taskInput, selectedRepo, selectedBranch, tasks, saveTasks, token]);
+    if (opType !== 'agent') {
+      if (opType === 'create_issue') {
+        saveTasks([newTask, ...tasks]);
+        setActiveGitHubOp({ task: newTask, opType, suggestedTitle, running: true });
+        getApiToken(repoOwner)
+          .then((apiToken) => githubCreateIssue(apiToken, selectedRepo.full_name, suggestedTitle, ''))
+          .then((issue) => {
+            const updatedTask = { ...newTask, status: 'open' as TaskStatus, prUrl: issue.html_url, prNumber: issue.number };
+            saveTasks([updatedTask, ...tasks.filter((t) => t.id !== newTask.id)]);
+            setActiveGitHubOp((prev) => prev && { ...prev, result: issue, running: false });
+          })
+          .catch((err) => {
+            saveTasks(tasks.filter((t) => t.id !== newTask.id));
+            setActiveGitHubOp((prev) => prev && { ...prev, running: false, error: err instanceof Error ? err.message : 'Failed to create issue' });
+          });
+      } else if (opType === 'list_issues') {
+        saveTasks([newTask, ...tasks]);
+        setActiveGitHubOp({ task: newTask, opType, suggestedTitle, running: true });
+        saveTasks(tasks.filter((t) => t.id !== newTask.id));
+        getApiToken(repoOwner)
+          .then((apiToken) => fetchGitHubIssues(apiToken, selectedRepo.full_name))
+          .then((issues) => {
+            setActiveGitHubOp((prev) => prev && { ...prev, issues, running: false });
+          })
+          .catch((err) => {
+            setActiveGitHubOp((prev) => prev && { ...prev, running: false, error: err instanceof Error ? err.message : 'Failed to load issues' });
+          });
+      }
+      return;
+    }
+
+    // Goose agent for complex tasks — open the TaskRunView directly
+    saveTasks([newTask, ...tasks]);
+    setActiveTaskRun(newTask);
+  }, [taskInput, selectedRepo, tasks, saveTasks, getApiToken]);
 
   const activeTasks = tasks.filter(
     (t) => t.status === 'in_progress' || t.status === 'open' || t.status === 'review'
   );
   const archivedTasks = tasks.filter((t) => t.status === 'merged' || t.status === 'closed');
-  const suggestedTasks: Task[] = repos.slice(0, 3).map((r) => ({
-    id: `suggested-${r.id}`,
-    title: `Review open pull requests in ${r.name}`,
-    repo: r.full_name,
-    repoUrl: r.html_url,
-    status: 'open' as TaskStatus,
-    createdAt: r.updated_at,
-  }));
+  const SUGGESTED_TASK_TEMPLATES = [
+    'Review open pull requests and post a summary',
+    'Find and fix failing tests, then open a PR',
+    'Audit dependencies for security vulnerabilities',
+    'Improve error handling and add better logging',
+    'Write missing unit tests for core modules',
+  ];
+  const suggestedTasks: Task[] = repos.slice(0, 3).flatMap((r, ri) => [
+    {
+      id: `suggested-${r.id}`,
+      title: SUGGESTED_TASK_TEMPLATES[ri % SUGGESTED_TASK_TEMPLATES.length],
+      repo: r.full_name,
+      repoUrl: r.html_url,
+      status: 'open' as TaskStatus,
+      createdAt: r.updated_at,
+    },
+  ]);
 
   const displayedTasks =
     taskTab === 'active' ? activeTasks : taskTab === 'archived' ? archivedTasks : suggestedTasks;
 
-  if (activeTaskChat) {
+  // ─── Direct GitHub operation view (no Goose agent) ───────────────────────
+  if (activeGitHubOp) {
+    const { task: opTask, opType, result, error, running } = activeGitHubOp;
+
+    const handleBack = () => {
+      if (!result) {
+        // cancelled — remove in-progress task
+        saveTasks(tasks.filter((t) => t.id !== opTask.id));
+      }
+      setActiveGitHubOp(null);
+    };
+
     return (
       <MainPanelLayout>
-        <BaseChat
-          sessionId={activeTaskChat.sessionId}
-          initialMessage={activeTaskChat.initialMessage}
-          isActiveSession={true}
-          suppressEmptyState={true}
-          setChat={setChatState}
-          renderHeader={() => (
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setActiveTaskChat(null)}
-                className="p-1.5 h-auto"
-              >
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate text-text-primary">
-                  {activeTaskChat.task.title}
-                </p>
-                <p className="text-xs text-text-secondary flex items-center gap-1">
-                  <Github className="w-3 h-3" />
-                  {activeTaskChat.task.repo}
-                </p>
-              </div>
+        <div className="flex flex-col h-full">
+          {/* Header */}
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0">
+            <Button variant="ghost" size="sm" onClick={handleBack} className="p-1.5 h-auto">
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate text-text-primary">{opTask.title}</p>
+              <p className="text-xs text-text-secondary flex items-center gap-1">
+                <Github className="w-3 h-3" />
+                {opTask.repo}
+              </p>
             </div>
-          )}
-        />
+          </div>
+
+          <ScrollArea className="flex-1">
+            <div className="p-6 max-w-xl mx-auto">
+              {opType === 'create_issue' && running && (
+                <div className="flex flex-col items-center gap-3 py-12 text-sm text-text-secondary">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                  Creating issue…
+                </div>
+              )}
+              {opType === 'create_issue' && !running && error && (
+                <div className="flex flex-col gap-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-400">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                  {(error.includes('not accessible') || error.includes('403')) && (
+                    <div className="pl-6 flex flex-col gap-2">
+                      <p className="text-xs opacity-80">
+                        Your GitHub App is not installed on this repository. You need to{' '}
+                        <strong>install</strong> it (not just authorize it) before it can create issues or PRs.
+                      </p>
+                      <Button
+                        size="sm"
+                        className="h-7 w-fit text-xs bg-red-600 hover:bg-red-700 text-white"
+                        onClick={() =>
+                          window.electron.openExternal(
+                            appSlug
+                              ? `https://github.com/apps/${appSlug}/installations/new`
+                              : 'https://github.com/settings/installations'
+                          )
+                        }
+                      >
+                        Install GitHub App →
+                      </Button>
+                      <p className="text-xs opacity-70">
+                        After installing, come back and try again. No need to sign out.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {opType === 'create_issue' && result && (
+                <div className="flex flex-col items-center gap-4 py-8 text-center">
+                  <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                    <Check className="w-6 h-6 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <p className="text-base font-semibold text-text-primary">Issue created!</p>
+                    <p className="text-sm text-text-secondary mt-1">
+                      #{result.number} · {result.title}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.electron.openExternal(result.html_url)}
+                    className="gap-2"
+                  >
+                    <Github className="w-4 h-4" />
+                    View on GitHub
+                  </Button>
+                </div>
+              )}
+              {opType === 'list_issues' && (
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center gap-2 text-sm text-text-secondary">
+                    <Github className="w-4 h-4" />
+                    <span>
+                      Open issues in{' '}
+                      <span className="font-medium text-text-primary">{opTask.repo}</span>
+                    </span>
+                  </div>
+                  {running && (
+                    <div className="flex items-center gap-2 text-sm text-text-secondary py-8 justify-center">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading issues…
+                    </div>
+                  )}
+                  {error && (
+                    <div className="flex items-start gap-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-sm text-red-700 dark:text-red-400">
+                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                      {error}
+                    </div>
+                  )}
+                  {!running && !error && activeGitHubOp?.issues && (
+                    activeGitHubOp.issues.length === 0 ? (
+                      <p className="text-sm text-text-secondary text-center py-8">No open issues.</p>
+                    ) : (
+                      <div className="divide-y divide-border border border-border rounded-xl overflow-hidden">
+                        {activeGitHubOp.issues.map((issue) => (
+                          <button
+                            key={issue.number}
+                            onClick={() => window.electron.openExternal(issue.html_url)}
+                            className="w-full text-left px-4 py-3 hover:bg-background-secondary transition-colors flex items-start gap-3"
+                          >
+                            <GitPullRequest className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-text-primary truncate">
+                                {issue.title}
+                              </p>
+                              <p className="text-xs text-text-secondary mt-0.5">
+                                #{issue.number}
+                              </p>
+                            </div>
+                            <ArrowRight className="w-3.5 h-3.5 text-text-secondary mt-0.5 shrink-0" />
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
       </MainPanelLayout>
+    );
+  }
+
+  if (activeTaskRun && selectedRepo && token) {
+    return (
+      <TaskRunView
+        task={activeTaskRun}
+        userToken={token}
+        botMode={botMode}
+        botAppId={botAppId ?? undefined}
+        repo={selectedRepo}
+        branch={selectedBranch}
+        onBack={() => setActiveTaskRun(null)}
+        onTaskUpdate={(updates) => {
+          setActiveTaskRun((prev) => (prev ? { ...prev, ...updates } : prev));
+          saveTasks(
+            tasks.map((t) =>
+              t.id === activeTaskRun.id ? { ...t, ...updates } : t
+            )
+          );
+        }}
+      />
     );
   }
 
@@ -836,6 +1110,43 @@ export default function CopilotView() {
               </Button>
             </div>
 
+            {/* GitHub App not installed warning */}
+            {appInstalled === false && (
+              <div className="flex items-start gap-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-sm">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-amber-800 dark:text-amber-300">
+                    GitHub App not installed on any repository
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                    Authorization alone isn't enough — you need to <strong>install</strong> your GitHub App on
+                    the repos you want Goose to access. This is what lets it create issues, push code, and open PRs.
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                      onClick={() =>
+                        window.electron.openExternal(
+                          appSlug
+                            ? `https://github.com/apps/${appSlug}/installations/new`
+                            : 'https://github.com/settings/installations'
+                        )
+                      }
+                    >
+                      Install GitHub App
+                    </Button>
+                    <button
+                      className="text-xs underline text-amber-700 dark:text-amber-400"
+                      onClick={() => loadRepos(token!)}
+                    >
+                      Re-check
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Task creation card — styled like ChatInput */}
             <div
               className={`rounded-2xl border bg-background-primary transition-colors ${
@@ -853,10 +1164,13 @@ export default function CopilotView() {
                     createTask();
                   }
                 }}
-                placeholder="Plan a new task for Goose to handle… (select a repo below)"
+                placeholder={
+                  selectedRepo
+                    ? `What should Goose do in ${selectedRepo.name}? e.g. "Fix the login bug and open a PR", "Review PR #42", "Create a new auth module"`
+                    : 'Select a repository below, then describe a task for Goose…'
+                }
                 rows={3}
-                disabled={creatingTask}
-                className="w-full text-sm bg-transparent resize-none focus:outline-none px-4 pt-4 pb-2 placeholder:text-text-secondary/50 disabled:opacity-50"
+                className="w-full text-sm bg-transparent resize-none focus:outline-none px-4 pt-4 pb-2 placeholder:text-text-secondary/50"
               />
               {/* Bottom bar */}
               <div className="flex items-center gap-1 px-3 pb-3">
@@ -890,30 +1204,33 @@ export default function CopilotView() {
                 {/* Send button */}
                 <button
                   onClick={createTask}
-                  disabled={!taskInput.trim() || !selectedRepo || creatingTask}
+                  disabled={!taskInput.trim() || !selectedRepo}
                   className="ml-auto w-8 h-8 rounded-full flex items-center justify-center transition-colors bg-text-primary text-background-primary disabled:opacity-30 disabled:cursor-not-allowed hover:opacity-90"
-                  title={
-                    creatingTaskPhase === 'github'
-                      ? 'Loading GitHub tools…'
-                      : creatingTaskPhase === 'session'
-                        ? 'Starting session…'
-                        : 'Start task'
-                  }
+                  title="Start task"
                 >
-                  {creatingTask ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <ArrowRight className="w-4 h-4" />
-                  )}
+                  <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* Loading phase status */}
-            {creatingTaskPhase && (
-              <div className="flex items-center gap-2 text-xs text-text-secondary px-1">
-                <Loader2 className="w-3 h-3 animate-spin shrink-0" />
-                {creatingTaskPhase === 'session' ? 'Starting session…' : 'Loading GitHub tools…'}
+            {/* Quick suggestion chips */}
+            {selectedRepo && !taskInput && (
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  'Review open PRs',
+                  'Fix failing tests and create a PR',
+                  'Create a new issue',
+                  'List open issues',
+                  'Refactor for better readability',
+                ].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => setTaskInput(suggestion)}
+                    className="text-xs px-3 py-1.5 rounded-full border border-border text-text-secondary hover:text-text-primary hover:bg-background-secondary transition-colors"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
               </div>
             )}
 
@@ -1020,16 +1337,39 @@ export default function CopilotView() {
                           </div>
                           <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             <StatusBadge status={task.status} />
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs h-7 px-2.5"
-                              onClick={() => {
-                                if (task.prUrl) window.electron.openExternal(task.prUrl);
-                              }}
-                            >
-                              View Task
-                            </Button>
+                            {task.id.startsWith('suggested-') ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-7 px-2.5"
+                                onClick={() => {
+                                  selectRepo(repos.find((r) => r.full_name === task.repo) ?? null);
+                                  setTaskInput(task.title);
+                                  setTaskTab('active');
+                                }}
+                              >
+                                Use This
+                              </Button>
+                            ) : task.prUrl ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-7 px-2.5 gap-1"
+                                onClick={() => window.electron.openExternal(task.prUrl!)}
+                              >
+                                <ArrowRight className="w-3 h-3" />
+                                View PR
+                              </Button>
+                            ) : task.status === 'in_progress' && selectedRepo ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-7 px-2.5"
+                                onClick={() => setActiveTaskRun(task)}
+                              >
+                                View Task
+                              </Button>
+                            ) : null}
                           </div>
                           <div className="flex items-center gap-2 group-hover:hidden">
                             <StatusBadge status={task.status} />
@@ -1300,48 +1640,92 @@ export default function CopilotView() {
 
         {/* Settings tab */}
         {mainTab === 'settings' && (
-          <div className="flex flex-col flex-1 min-h-0 px-6 py-5">
-            <h1 className="text-xl font-semibold text-text-primary mb-1">Settings</h1>
-            <p className="text-sm text-text-secondary mb-6">Manage your Copilot preferences</p>
-            <div className="space-y-4">
-              <div className="border border-border rounded-xl p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Settings className="w-5 h-5 text-text-secondary" />
-                  <div>
-                    <p className="text-sm font-medium">GitHub Account</p>
-                    <p className="text-xs text-text-secondary">@{user?.login}</p>
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={signOut}
-                  className="flex items-center gap-1.5 text-xs text-red-500 border-red-200 hover:bg-red-50"
-                >
-                  <LogOut className="w-3.5 h-3.5" /> Sign out
-                </Button>
+          <ScrollArea className="flex-1">
+            <div className="flex flex-col px-6 py-5 gap-6 max-w-2xl">
+              <div>
+                <h1 className="text-xl font-semibold text-text-primary mb-1">Settings</h1>
+                <p className="text-sm text-text-secondary">Manage your Copilot preferences</p>
               </div>
-              <div className="border border-border rounded-xl p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Github className="w-5 h-5 text-text-secondary" />
-                  <div>
-                    <p className="text-sm font-medium">Repositories</p>
-                    <p className="text-xs text-text-secondary">{repos.length} repos loaded</p>
+
+              {/* ── GitHub Account ─────────────────────────────────────── */}
+              <div className="border border-border rounded-xl divide-y divide-border">
+                <div className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Github className="w-5 h-5 text-text-secondary" />
+                    <div>
+                      <p className="text-sm font-medium">GitHub Account</p>
+                      <p className="text-xs text-text-secondary">@{user?.login}</p>
+                    </div>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={signOut}
+                    className="flex items-center gap-1.5 text-xs text-red-500 border-red-200 hover:bg-red-50"
+                  >
+                    <LogOut className="w-3.5 h-3.5" /> Sign out
+                  </Button>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => token && loadRepos(token)}
-                  disabled={loadingRepos}
-                  className="flex items-center gap-1.5 text-xs"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loadingRepos ? 'animate-spin' : ''}`} />
-                  Refresh
-                </Button>
+                <div className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <RefreshCw className="w-5 h-5 text-text-secondary" />
+                    <div>
+                      <p className="text-sm font-medium">Repositories</p>
+                      <p className="text-xs text-text-secondary">{repos.length} repos loaded</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => token && loadRepos(token)}
+                    disabled={loadingRepos}
+                    className="flex items-center gap-1.5 text-xs"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingRepos ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
+              </div>
+
+              {/* ── GitHub App — Bot Identity ───────────────────────────── */}
+              <div className="border border-border rounded-xl overflow-hidden">
+                <div className="px-4 py-3 bg-background-secondary border-b border-border flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                      <Puzzle className="w-4 h-4" />
+                      GitHub App — Bot Identity
+                    </p>
+                    <p className="text-xs text-text-secondary mt-0.5">
+                      Actions appear as <code className="bg-background-primary px-1 rounded">{appSlug ?? 'your-app'}[bot]</code> — like Cursor, Tembo, and Claude Code Review
+                    </p>
+                  </div>
+                  {botMode
+                    ? <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-medium"><Check className="w-3 h-3" /> Active</span>
+                    : <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">Not configured</span>
+                  }
+                </div>
+
+                <div className="p-4">
+                  {botMode && botAppId ? (
+                    <div className="space-y-1">
+                      <p className="text-sm text-text-primary">App ID: <code className="text-text-secondary">{botAppId}</code></p>
+                      <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                        <Check className="w-3 h-3" />
+                        All actions show as <strong>{appSlug ?? 'goose-copilot'}[bot]</strong>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-text-secondary">
+                      Set <code className="bg-background-secondary px-1 rounded">GITHUB_APP_ID</code> and{' '}
+                      <code className="bg-background-secondary px-1 rounded">GITHUB_APP_PRIVATE_KEY_PATH</code> in your{' '}
+                      <code className="bg-background-secondary px-1 rounded">.env</code> file to enable bot identity.
+                      Actions currently show as <strong>@{user?.login}</strong>.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          </ScrollArea>
         )}
       </div>
     </MainPanelLayout>

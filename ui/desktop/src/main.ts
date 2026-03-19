@@ -11,6 +11,7 @@ import {
   net,
   Notification,
   powerSaveBlocker,
+  safeStorage,
   screen,
   session,
   shell,
@@ -1299,6 +1300,130 @@ ipcMain.handle('open-external', async (_event, url: string) => {
   await shell.openExternal(url);
 });
 
+// ── GitHub App — bot-identity via env-configured credentials ─────────────────
+// App ID + private key live in .env (GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY or
+// GITHUB_APP_PRIVATE_KEY_PATH). Users just authenticate; the app handles the rest.
+
+function generateGitHubAppJWT(appId: string, privateKey: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(
+    JSON.stringify({ iat: now - 60, exp: now + 540, iss: parseInt(appId, 10) })
+  ).toString('base64url');
+  const signingInput = `${header}.${payload}`;
+  const sign = crypto.createSign('RSA-SHA256');
+  sign.update(signingInput);
+  return `${signingInput}.${sign.sign(privateKey, 'base64url')}`;
+}
+
+async function loadAppPrivateKey(): Promise<string | null> {
+  const inline = process.env.GITHUB_APP_PRIVATE_KEY;
+  if (inline?.trim()) return inline.replace(/\\n/g, '\n');
+  const keyPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH?.trim();
+  if (keyPath) {
+    try {
+      // Resolve relative paths from the app's working directory
+      const resolved = path.isAbsolute(keyPath)
+        ? keyPath
+        : path.resolve(app.getAppPath(), '..', keyPath);
+      return await fs.readFile(resolved, 'utf-8');
+    } catch {
+      // Try resolving from process.cwd() as fallback
+      try {
+        return await fs.readFile(path.resolve(process.cwd(), keyPath), 'utf-8');
+      } catch {
+        log.error('[GitHub App] Could not read private key from', keyPath);
+      }
+    }
+  }
+  return null;
+}
+
+// In-memory installation token cache keyed by "appId:owner"
+const installationTokenCache = new Map<string, { token: string; expiresAt: number }>();
+
+// Reports whether the app is configured (App ID + key present in env)
+ipcMain.handle('get-github-app-config', async () => {
+  const appId = process.env.GITHUB_APP_ID?.trim();
+  const hasKey = !!(process.env.GITHUB_APP_PRIVATE_KEY?.trim() || process.env.GITHUB_APP_PRIVATE_KEY_PATH?.trim());
+  return appId && hasKey ? { appId } : null;
+});
+
+// Get a short-lived installation access token — all actions show as "app[bot]"
+ipcMain.handle('get-github-installation-token', async (_event, owner: string) => {
+  try {
+    const appId = process.env.GITHUB_APP_ID?.trim();
+    if (!appId) {
+      return { error: 'GITHUB_APP_ID is not set in .env' };
+    }
+    const privateKey = await loadAppPrivateKey();
+    if (!privateKey) {
+      return { error: 'GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_PATH is not set in .env' };
+    }
+
+    const cacheKey = `${appId}:${owner}`;
+    const cached = installationTokenCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now() + 60_000) {
+      return { token: cached.token };
+    }
+
+    const jwt = generateGitHubAppJWT(appId, privateKey);
+
+    const installRes = await net.fetch('https://api.github.com/app/installations?per_page=100', {
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'Goose-Copilot/1.0',
+      },
+    });
+    if (!installRes.ok) {
+      const e = (await installRes.json().catch(() => ({}))) as { message?: string };
+      throw new Error(e.message ?? `GitHub API ${installRes.status}`);
+    }
+
+    const installations = (await installRes.json()) as Array<{
+      id: number;
+      account: { login: string } | null;
+    }>;
+    const installation = installations.find(
+      (i) => i.account?.login?.toLowerCase() === owner.toLowerCase()
+    );
+    if (!installation) {
+      throw new Error(
+        `App not installed for "${owner}". Go to https://github.com/settings/installations and install it.`
+      );
+    }
+
+    const tokenRes = await net.fetch(
+      `https://api.github.com/app/installations/${installation.id}/access_tokens`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'Goose-Copilot/1.0',
+        },
+      }
+    );
+    if (!tokenRes.ok) {
+      const e = (await tokenRes.json().catch(() => ({}))) as { message?: string };
+      throw new Error(e.message ?? `Failed to get installation token: ${tokenRes.status}`);
+    }
+
+    const tokenData = (await tokenRes.json()) as { token: string; expires_at: string };
+    installationTokenCache.set(cacheKey, {
+      token: tokenData.token,
+      expiresAt: new Date(tokenData.expires_at).getTime(),
+    });
+
+    log.info('[GitHub App] Installation token issued for', owner);
+    return { token: tokenData.token, expiresAt: tokenData.expires_at };
+  } catch (err) {
+    log.error('[GitHub App] Installation token error:', err);
+    return { error: err instanceof Error ? err.message : 'Failed to get installation token' };
+  }
+});
+
 ipcMain.handle('start-github-device-flow', async () => {
   const clientId = process.env.VITE_GITHUB_CLIENT_ID || process.env.GITHUB_CLIENT_ID;
   if (!clientId) {
@@ -1310,7 +1435,7 @@ ipcMain.handle('start-github-device-flow', async () => {
     const res = await net.fetch('https://github.com/login/device/code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ client_id: clientId }),
+      body: JSON.stringify({ client_id: clientId, scope: 'repo read:user' }),
     });
     const data = (await res.json()) as {
       device_code?: string;
