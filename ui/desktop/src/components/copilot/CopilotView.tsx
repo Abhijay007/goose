@@ -203,7 +203,7 @@ async function fetchGitHubRepos(token: string): Promise<GitHubRepo[]> {
       `https://api.github.com/user/repos?per_page=100&page=${page}&sort=updated&affiliation=owner,collaborator,organization_member`,
       { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' } }
     );
-    if (!res.ok) throw new Error(`GitHub API error ${res.status}`);
+    if (!res.ok) throw new Error(`${res.status}`);
     const batch = (await res.json()) as GitHubRepo[];
     repos.push(...batch);
     if (batch.length < 100) break;
@@ -493,8 +493,7 @@ export default function CopilotView() {
       if (botMode && botAppId) {
         const result = await window.electron.getGitHubInstallationToken(repoOwner);
         if ('token' in result) return result.token;
-        // If installation token fails, surface the error rather than silently falling back
-        throw new Error(result.error);
+        // Fall back to user token silently — bot mode best-effort
       }
       if (!token) throw new Error('Not authenticated');
       return token;
@@ -542,7 +541,15 @@ export default function CopilotView() {
         return stillExists;
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load repositories');
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('401') || msg.includes('Bad credentials') || msg.includes('Unauthorized')) {
+        // Token expired — clear it and send user back to sign-in
+        localStorage.removeItem(GITHUB_TOKEN_KEY);
+        localStorage.removeItem(GITHUB_USER_KEY);
+        setToken(null);
+        setUser(null);
+      }
+      // Don't show raw API errors to the user
     } finally {
       setLoadingRepos(false);
     }
@@ -1335,7 +1342,7 @@ export default function CopilotView() {
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center gap-2">
                             <StatusBadge status={task.status} />
                             {task.id.startsWith('suggested-') ? (
                               <Button
@@ -1370,9 +1377,6 @@ export default function CopilotView() {
                                 View Task
                               </Button>
                             ) : null}
-                          </div>
-                          <div className="flex items-center gap-2 group-hover:hidden">
-                            <StatusBadge status={task.status} />
                           </div>
                         </div>
                       </div>
