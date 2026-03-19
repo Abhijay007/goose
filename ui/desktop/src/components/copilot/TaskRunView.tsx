@@ -274,16 +274,13 @@ export default function TaskRunView({
           );
         }
 
-        // Resolve the right token — installation token (bot identity) or user token
+        // Resolve the right token — installation token (bot identity) or fall back to user token
         let token = userToken;
         if (botMode && botAppId) {
           const repoOwner = repo.full_name.split('/')[0];
           const result = await window.electron.getGitHubInstallationToken(repoOwner);
-          if ('token' in result) {
-            token = result.token;
-          } else {
-            throw new Error(result.error);
-          }
+          if ('token' in result) token = result.token;
+          // else: silently use user token
         }
 
         const session = await createSession(getInitialWorkingDir());
