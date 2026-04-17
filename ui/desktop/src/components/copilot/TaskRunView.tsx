@@ -188,7 +188,8 @@ function describeToolCall(
 }
 
 function extractGitHubUrl(text: string): string | null {
-  const m = text.match(/https:\/\/github\.com\/[^\s<>")]+\/(?:pull|issues)\/\d+/);
+  // Matches PR URLs, issue URLs, and PR review URLs (pull/{n}#pullrequestreview-{id})
+  const m = text.match(/https:\/\/github\.com\/[^\s<>")]+\/(?:pull|issues)\/\d+(?:#[^\s<>")]*)?/);
   return m ? m[0] : null;
 }
 
@@ -233,17 +234,49 @@ IF THE TASK IS TO CREATE OR FIX CODE (make a PR, fix a bug, add a feature):
     -d '{"title":"...","head":"goose/<short-description>","base":"${branch}","body":"..."}'
 
 IF THE TASK IS TO REVIEW A PR (code review, check a pull request):
-  # Find the PR number from the task description, then:
-  curl -s https://api.github.com/repos/${repo.full_name}/pulls/<PR_NUMBER> \\
-    -H "Authorization: Bearer ${token}" | grep -E '"title"|"body"|"head"'
+  # Step 1 — Fetch PR metadata and get the HEAD commit SHA
+  PR_META=$(curl -s https://api.github.com/repos/${repo.full_name}/pulls/<PR_NUMBER> \\
+    -H "Authorization: Bearer ${token}")
+  COMMIT_SHA=$(echo "$PR_META" | python3 -c "import sys,json; print(json.load(sys.stdin)['head']['sha'])")
+  PR_TITLE=$(echo "$PR_META" | python3 -c "import sys,json; print(json.load(sys.stdin)['title'])")
+
+  # Step 2 — Fetch the PR branch and diff it against the base
   git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
-  git checkout pr-<PR_NUMBER>
-  git diff ${branch}...pr-<PR_NUMBER>
-  # After reviewing the diff, post your review as a comment:
-  curl -s -X POST https://api.github.com/repos/${repo.full_name}/issues/<PR_NUMBER>/comments \\
+  git diff ${branch}...pr-<PR_NUMBER> --unified=5 > /tmp/pr-<PR_NUMBER>-diff.txt
+  cat /tmp/pr-<PR_NUMBER>-diff.txt
+
+  # Step 3 — Analyse the diff carefully:
+  #   • Note the exact relative file path from each "diff --git a/<path> b/<path>" header.
+  #   • Note the exact line numbers of added/changed lines from the @@ -L,S +L,S @@ hunks.
+  #   • For each concrete issue you find, record: path, line (RIGHT-side line number), and a
+  #     clear, actionable comment body.
+  #   • Only target lines that are present in the diff (added or unchanged context lines).
+  #     Targeting a line NOT in the diff causes a 422 error from the API.
+
+  # Step 4 — Write the review JSON to a temp file using text_editor (create command).
+  #   Use this exact schema. The "comments" array holds every inline annotation.
+  #   If you find no specific line-level issues, use an empty array and put everything in "body".
+  #
+  #   /tmp/goose-review-<PR_NUMBER>.json content:
+  #   {
+  #     "commit_id": "<COMMIT_SHA from step 1>",
+  #     "body": "## Goose Code Review\\n\\n<overall summary, key findings, suggestions>",
+  #     "event": "COMMENT",
+  #     "comments": [
+  #       {
+  #         "path": "relative/path/to/file.ts",
+  #         "line": <RIGHT-side line number as integer>,
+  #         "side": "RIGHT",
+  #         "body": "<actionable inline comment>"
+  #       }
+  #     ]
+  #   }
+
+  # Step 5 — Submit the review via the Pull Request Review API (NOT the issue comments API)
+  curl -s -X POST https://api.github.com/repos/${repo.full_name}/pulls/<PR_NUMBER>/reviews \\
     -H "Authorization: Bearer ${token}" \\
     -H "Content-Type: application/json" \\
-    -d '{"body":"## Goose Code Review\\n\\n<your review here>"}'
+    --data @/tmp/goose-review-<PR_NUMBER>.json
 
 IMPORTANT: When you create or comment on a PR/issue, output its GitHub URL clearly so it can be tracked.
 
