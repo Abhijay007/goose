@@ -19,12 +19,10 @@ import { ScrollArea } from '../ui/scroll-area';
 import { MainPanelLayout } from '../Layout/MainPanelLayout';
 import { createSession } from '../../sessions';
 import { getInitialWorkingDir } from '../../utils/workingDir';
-import { reply } from '../../api';
+import { reply, resumeAgent } from '../../api';
 import { createUserMessage } from '../../types/message';
 import type { ToolRequest, ToolResponse } from '../../api';
 import { useModelAndProvider } from '../ModelAndProviderContext';
-
-// ─── Types ──────────────────────────────────────────────────────────────────
 
 export type TaskRunStatus = 'open' | 'merged' | 'closed' | 'review' | 'in_progress';
 
@@ -53,8 +51,6 @@ interface AgentStep {
   status: StepStatus;
   output?: string;
 }
-
-// ─── Tool call parsing ───────────────────────────────────────────────────────
 
 function resolveToolCall(
   raw: Record<string, unknown>
@@ -154,13 +150,11 @@ function describeToolCall(
   }
 }
 
-// Extract GitHub PR/issue URLs from text
 function extractGitHubUrl(text: string): string | null {
   const m = text.match(/https:\/\/github\.com\/[^\s<>")]+\/(?:pull|issues)\/\d+/);
   return m ? m[0] : null;
 }
 
-// ─── Step item ───────────────────────────────────────────────────────────────
 
 function StepItem({
   step,
@@ -225,8 +219,6 @@ function StepItem({
   );
 }
 
-// ─── Main component ──────────────────────────────────────────────────────────
-
 export default function TaskRunView({
   task,
   userToken,
@@ -246,7 +238,7 @@ export default function TaskRunView({
   onBack: () => void;
   onTaskUpdate: (updates: Partial<TaskRunTask>) => void;
 }) {
-  const { currentModel, currentProvider } = useModelAndProvider();
+  const { getCurrentModelAndProvider } = useModelAndProvider();
   const [steps, setSteps] = useState<AgentStep[]>([]);
   const [runStatus, setRunStatus] = useState<'starting' | 'running' | 'done' | 'error'>('starting');
   const [prUrl, setPrUrl] = useState<string | null>(null);
@@ -256,7 +248,6 @@ export default function TaskRunView({
   const abortRef = useRef<AbortController | null>(null);
   const prUrlRef = useRef<string | null>(null);
 
-  // Auto-scroll as steps appear
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [steps, runStatus]);
@@ -267,23 +258,32 @@ export default function TaskRunView({
 
     const run = async () => {
       try {
-        // Guard: Goose must have a model configured to run agent tasks
-        if (!currentModel || !currentProvider) {
+        // Fetch model/provider directly from the API — context state may still be null on mount
+        // because ModelAndProviderContext loads asynchronously after the first render.
+        const { model, provider } = await getCurrentModelAndProvider();
+        if (!model || !provider) {
           throw new Error(
             'No AI model configured. Open Goose Settings and add a model provider (e.g. OpenAI, Anthropic) before running tasks.'
           );
         }
 
-        // Resolve the right token — installation token (bot identity) or fall back to user token
         let token = userToken;
         if (botMode && botAppId) {
           const repoOwner = repo.full_name.split('/')[0];
           const result = await window.electron.getGitHubInstallationToken(repoOwner);
           if ('token' in result) token = result.token;
-          // else: silently use user token
         }
 
         const session = await createSession(getInitialWorkingDir());
+        if (cancelled) return;
+
+        // Initialize the provider on the agent — same step the normal chat flow uses via
+        // resumeAgent before sending the first message. Without this, goosed has no provider
+        // and reply() fails with "Provider not set".
+        await resumeAgent({
+          body: { session_id: session.id, load_model_and_extensions: true },
+          throwOnError: true,
+        });
         if (cancelled) return;
 
         onTaskUpdate({ sessionId: session.id });
@@ -320,7 +320,6 @@ export default function TaskRunView({
                 const resp = content as ToolResponse & { type: 'toolResponse' };
                 const result = resolveToolResult(resp.toolResult as Record<string, unknown>);
 
-                // Try to extract a PR URL from tool output
                 if (result.text) {
                   const found = extractGitHubUrl(result.text);
                   if (found && !prUrlRef.current) {
@@ -342,7 +341,6 @@ export default function TaskRunView({
                 );
               } else if (content.type === 'text') {
                 const text = (content as { type: 'text'; text: string }).text;
-                // Look for GitHub URLs in final assistant text
                 const found = extractGitHubUrl(text);
                 if (found && !prUrlRef.current) {
                   prUrlRef.current = found;
@@ -384,7 +382,10 @@ export default function TaskRunView({
       cancelled = true;
       abortRef.current?.abort();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Empty dep array is intentional: the task runs exactly once on mount.
+  // Props (task, repo, branch) are fixed for the lifetime of this component instance.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleCancel = () => {
     abortRef.current?.abort();
@@ -528,7 +529,7 @@ export default function TaskRunView({
                   <Button variant="outline" size="sm" onClick={onBack} className="text-xs">
                     Go back
                   </Button>
-                  {(!currentModel || !currentProvider || errorMsg?.includes('model') || errorMsg?.includes('provider') || errorMsg?.includes('Provider')) && (
+                  {(errorMsg?.includes('model') || errorMsg?.includes('provider') || errorMsg?.includes('Provider') || errorMsg?.includes('configured')) && (
                     <Button
                       size="sm"
                       className="text-xs"
@@ -549,41 +550,58 @@ export default function TaskRunView({
   );
 }
 
-// ─── Task prompt builder ─────────────────────────────────────────────────────
-
 function buildTaskPrompt(
   taskDescription: string,
   token: string,
   repo: GitHubRunRepo,
   branch: string
 ): string {
-  return `You are an autonomous GitHub coding agent, like Cursor Bug Bot or GitHub Copilot.
+  const cloneUrl = `https://x-access-token:${token}@github.com/${repo.full_name}.git`;
+  const dir = `/tmp/goose-${repo.name}-${Date.now()}`;
 
-REPOSITORY: ${repo.full_name} (${repo.html_url})
-BRANCH: ${branch}
+  return `You are an autonomous GitHub coding agent. Use only shell and text_editor tools.
+
+REPOSITORY: ${repo.full_name}
+BASE BRANCH: ${branch}
 GITHUB_TOKEN: ${token}
 
-AVAILABLE TOOLS (developer extension):
-- shell: run any shell command
-- text_editor: read/write/edit files
+STRICT RULES — follow these without exception:
+- NEVER run \`open\`, \`osascript\`, \`xdg-open\`, or any GUI command. Terminal only.
+- NEVER ask the user to sign in, authenticate, or do anything manually.
+- NEVER open a browser. All GitHub operations go through curl or git.
+- Work autonomously. No clarifying questions.
 
-HOW TO WORK WITH GITHUB:
-1. Clone: git clone https://${token}@github.com/${repo.full_name}.git /tmp/${repo.name}
-2. Work inside /tmp/${repo.name}
-3. Create a branch: git checkout -b fix/<short-name>
-4. Make code changes using text_editor or shell
-5. Test if possible: run tests
-6. Commit: git add -A && git commit -m "..."
-7. Push: git push origin <branch-name>
-8. Create PR:
-   curl -s -X POST https://api.github.com/repos/${repo.full_name}/pulls \\
-     -H "Authorization: Bearer ${token}" \\
-     -H "Content-Type: application/json" \\
-     -d '{"title":"...","head":"<branch-name>","base":"${branch}","body":"..."}'
+GIT SETUP (run once at the start):
+  git clone ${cloneUrl} ${dir}
+  cd ${dir}
+  git config user.email "goose-copilot[bot]@users.noreply.github.com"
+  git config user.name "goose-copilot[bot]"
+  git remote set-url origin ${cloneUrl}
 
-IMPORTANT: When you create a PR or issue, output its GitHub URL (https://github.com/...) clearly.
+IF THE TASK IS TO CREATE OR FIX CODE (make a PR, fix a bug, add a feature):
+  git checkout -b goose/<short-description>
+  # make changes with text_editor or shell
+  git add -A && git commit -m "..."
+  git push origin goose/<short-description>
+  curl -s -X POST https://api.github.com/repos/${repo.full_name}/pulls \\
+    -H "Authorization: Bearer ${token}" \\
+    -H "Content-Type: application/json" \\
+    -d '{"title":"...","head":"goose/<short-description>","base":"${branch}","body":"..."}'
 
-TASK: ${taskDescription}
+IF THE TASK IS TO REVIEW A PR (code review, check a pull request):
+  # Find the PR number from the task description, then:
+  curl -s https://api.github.com/repos/${repo.full_name}/pulls/<PR_NUMBER> \\
+    -H "Authorization: Bearer ${token}" | grep -E '"title"|"body"|"head"'
+  git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
+  git checkout pr-<PR_NUMBER>
+  git diff ${branch}...pr-<PR_NUMBER>
+  # After reviewing the diff, post your review as a comment:
+  curl -s -X POST https://api.github.com/repos/${repo.full_name}/issues/<PR_NUMBER>/comments \\
+    -H "Authorization: Bearer ${token}" \\
+    -H "Content-Type: application/json" \\
+    -d '{"body":"## Goose Code Review\\n\\n<your review here>"}'
 
-Work autonomously. Do not ask clarifying questions. Make a reasonable interpretation and execute.`;
+IMPORTANT: When you create or comment on a PR/issue, output its GitHub URL clearly so it can be tracked.
+
+TASK: ${taskDescription}`;
 }

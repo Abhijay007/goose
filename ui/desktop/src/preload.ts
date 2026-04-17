@@ -177,23 +177,8 @@ type ElectronAPI = {
   isUsingGitHubFallback: () => Promise<boolean>;
   onGitHubAuthCallback: (callback: (url: string) => void) => void;
   offGitHubAuthCallback: (callback: (url: string) => void) => void;
-  startGitHubDeviceFlow: () => Promise<
-    | {
-        device_code: string;
-        user_code: string;
-        verification_uri: string;
-        expires_in: number;
-        interval: number;
-      }
-    | { error: string }
-  >;
-  pollGitHubDeviceTokenOnce: (deviceCode: string) => Promise<{
-    access_token?: string;
-    error?: string;
-    error_description?: string;
-    interval?: number;
-  }>;
-  // GitHub App bot-identity (credentials live in .env, never entered by the user)
+  startGitHubAppInstall: () => Promise<{ ok: true; slug: string } | { error: string }>;
+  getGitHubInstallationAccount: (installationId: number) => Promise<{ login: string; avatar_url: string; html_url: string } | { error: string }>;
   getGitHubAppConfig: () => Promise<{ appId: string } | null>;
   getGitHubInstallationToken: (owner: string) => Promise<{ token: string; expiresAt: string } | { error: string }>;
   // Recipe warning functions
@@ -367,9 +352,9 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.removeAllListeners('github-auth-callback');
     void callback;
   },
-  startGitHubDeviceFlow: () => ipcRenderer.invoke('start-github-device-flow'),
-  pollGitHubDeviceTokenOnce: (deviceCode: string) =>
-    ipcRenderer.invoke('poll-github-device-token-once', deviceCode),
+  startGitHubAppInstall: () => ipcRenderer.invoke('start-github-app-install'),
+  getGitHubInstallationAccount: (installationId: number) =>
+    ipcRenderer.invoke('get-github-installation-account', installationId),
   getGitHubAppConfig: () => ipcRenderer.invoke('get-github-app-config'),
   getGitHubInstallationToken: (owner: string) =>
     ipcRenderer.invoke('get-github-installation-token', owner),

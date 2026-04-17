@@ -11,7 +11,6 @@ import {
   net,
   Notification,
   powerSaveBlocker,
-  safeStorage,
   screen,
   session,
   shell,
@@ -1372,10 +1371,6 @@ ipcMain.handle('open-external', async (_event, url: string) => {
   await shell.openExternal(url);
 });
 
-// ── GitHub App — bot-identity via env-configured credentials ─────────────────
-// App ID + private key live in .env (GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY or
-// GITHUB_APP_PRIVATE_KEY_PATH). Users just authenticate; the app handles the rest.
-
 function generateGitHubAppJWT(appId: string, privateKey: string): string {
   const now = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
@@ -1394,13 +1389,11 @@ async function loadAppPrivateKey(): Promise<string | null> {
   const keyPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH?.trim();
   if (keyPath) {
     try {
-      // Resolve relative paths from the app's working directory
       const resolved = path.isAbsolute(keyPath)
         ? keyPath
         : path.resolve(app.getAppPath(), '..', keyPath);
       return await fs.readFile(resolved, 'utf-8');
     } catch {
-      // Try resolving from process.cwd() as fallback
       try {
         return await fs.readFile(path.resolve(process.cwd(), keyPath), 'utf-8');
       } catch {
@@ -1411,17 +1404,14 @@ async function loadAppPrivateKey(): Promise<string | null> {
   return null;
 }
 
-// In-memory installation token cache keyed by "appId:owner"
 const installationTokenCache = new Map<string, { token: string; expiresAt: number }>();
 
-// Reports whether the app is configured (App ID + key present in env)
 ipcMain.handle('get-github-app-config', async () => {
   const appId = process.env.GITHUB_APP_ID?.trim();
   const hasKey = !!(process.env.GITHUB_APP_PRIVATE_KEY?.trim() || process.env.GITHUB_APP_PRIVATE_KEY_PATH?.trim());
   return appId && hasKey ? { appId } : null;
 });
 
-// Get a short-lived installation access token — all actions show as "app[bot]"
 ipcMain.handle('get-github-installation-token', async (_event, owner: string) => {
   try {
     const appId = process.env.GITHUB_APP_ID?.trim();
@@ -1495,86 +1485,61 @@ ipcMain.handle('get-github-installation-token', async (_event, owner: string) =>
   }
 });
 
-ipcMain.handle('start-github-device-flow', async () => {
-  const clientId = process.env.VITE_GITHUB_CLIENT_ID || process.env.GITHUB_CLIENT_ID;
-  if (!clientId) {
-    return {
-      error: 'GitHub Client ID not configured. Set VITE_GITHUB_CLIENT_ID in your .env file.',
-    };
+ipcMain.handle('start-github-app-install', async () => {
+  const appId = process.env.GITHUB_APP_ID?.trim();
+  const privateKey = await loadAppPrivateKey();
+  if (!appId || !privateKey) {
+    return { error: 'GitHub App not configured. Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY (or GITHUB_APP_PRIVATE_KEY_PATH) in your .env file.' };
   }
   try {
-    const res = await net.fetch('https://github.com/login/device/code', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ client_id: clientId, scope: 'repo read:user' }),
+    const jwt = generateGitHubAppJWT(appId, privateKey);
+    const appRes = await net.fetch('https://api.github.com/app', {
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'Goose-Copilot/1.0',
+      },
     });
-    const data = (await res.json()) as {
-      device_code?: string;
-      user_code?: string;
-      verification_uri?: string;
-      expires_in?: number;
-      interval?: number;
-      error?: string;
-      error_description?: string;
-    };
-    if (data.error || !data.device_code) {
-      return { error: data.error_description || data.error || 'Failed to start device flow' };
+    if (!appRes.ok) {
+      const e = (await appRes.json().catch(() => ({}))) as { message?: string };
+      return { error: e.message ?? `Failed to fetch GitHub App info: ${appRes.status}` };
     }
-    await shell.openExternal(data.verification_uri!);
-    return {
-      device_code: data.device_code,
-      user_code: data.user_code!,
-      verification_uri: data.verification_uri!,
-      expires_in: data.expires_in ?? 900,
-      interval: data.interval ?? 5,
-    };
+    const appData = (await appRes.json()) as { slug: string; name: string };
+    await shell.openExternal(`https://github.com/apps/${appData.slug}/installations/new`);
+    return { ok: true, slug: appData.slug };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Failed to start device flow' };
+    return { error: err instanceof Error ? err.message : 'Failed to start installation flow' };
   }
 });
 
-// Single-shot poll — renderer drives the loop so the UI can react to each result
-ipcMain.handle('poll-github-device-token-once', async (_event, deviceCode: string) => {
-  const clientId = process.env.VITE_GITHUB_CLIENT_ID || process.env.GITHUB_CLIENT_ID;
-  if (!clientId) {
-    return { error: 'GitHub Client ID not configured' };
-  }
-
-  const parseGitHubTokenResponse = (
-    text: string
-  ): { access_token?: string; error?: string; error_description?: string; interval?: number } => {
-    try {
-      return JSON.parse(text);
-    } catch {
-      const params = new URLSearchParams(text);
-      return {
-        access_token: params.get('access_token') ?? undefined,
-        error: params.get('error') ?? undefined,
-        error_description: params.get('error_description') ?? undefined,
-        interval: params.get('interval') ? Number(params.get('interval')) : undefined,
-      };
-    }
-  };
-
+ipcMain.handle('get-github-installation-account', async (_event, installationId: number) => {
+  const appId = process.env.GITHUB_APP_ID?.trim();
+  const privateKey = await loadAppPrivateKey();
+  if (!appId || !privateKey) return { error: 'GitHub App not configured' };
   try {
-    const res = await net.fetch('https://github.com/login/oauth/access_token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        client_id: clientId,
-        device_code: deviceCode,
-        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-      }),
+    const jwt = generateGitHubAppJWT(appId, privateKey);
+    const res = await net.fetch(`https://api.github.com/app/installations/${installationId}`, {
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'Goose-Copilot/1.0',
+      },
     });
-    const text = await res.text();
-    log.info('[GitHub Device Flow] Poll response:', text.slice(0, 200));
-    return parseGitHubTokenResponse(text);
-  } catch (err) {
-    log.warn('[GitHub Device Flow] Poll network error:', err);
-    return {
-      error: 'network_error',
-      error_description: err instanceof Error ? err.message : 'Network error',
+    if (!res.ok) {
+      const e = (await res.json().catch(() => ({}))) as { message?: string };
+      return { error: e.message ?? `Failed to fetch installation: ${res.status}` };
+    }
+    const data = (await res.json()) as {
+      account: { login: string; avatar_url: string; html_url: string } | null;
     };
+    if (!data.account) return { error: 'Installation has no associated account' };
+    return {
+      login: data.account.login,
+      avatar_url: data.account.avatar_url,
+      html_url: data.account.html_url,
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to fetch installation account' };
   }
 });
 

@@ -15,7 +15,6 @@ import {
   Puzzle,
   Loader2,
   GitBranch,
-  Key,
   ArrowLeft,
   ArrowRight,
 } from 'lucide-react';
@@ -32,7 +31,6 @@ const GITHUB_TOKEN_KEY = 'copilot_github_token';
 const GITHUB_USER_KEY = 'copilot_github_user';
 const TASKS_KEY = 'copilot_tasks';
 const SELECTED_REPO_KEY = 'copilot_selected_repo';
-// Bot mode: private key is stored encrypted in main process (safeStorage), never in renderer
 
 type TaskStatus = 'open' | 'merged' | 'closed' | 'review' | 'in_progress';
 type TaskTab = 'active' | 'archived' | 'suggested';
@@ -94,18 +92,15 @@ interface ActiveGitHubOp {
 
 function detectGitHubOp(task: string): { opType: GitHubOpType; suggestedTitle: string } {
   const t = task.trim();
-  // Simple "create issue" — handled with a direct form
   if (/^(create|open|add|file|make|new)\s+(a\s+)?(new\s+)?(github\s+)?(issue|bug report|ticket)[:\s-]*/i.test(t)) {
     const suggestedTitle = t
       .replace(/^(create|open|add|file|make|new)\s+(a\s+)?(new\s+)?(github\s+)?(issue|bug report|ticket)[:\s-]*/i, '')
       .trim() || t;
     return { opType: 'create_issue', suggestedTitle };
   }
-  // List / show issues — direct API call, no agent needed
   if (/^(list|show|get|fetch|display)\s+(all\s+|open\s+|closed\s+)?(issues?|bugs?|tickets?)/i.test(t)) {
     return { opType: 'list_issues', suggestedTitle: t };
   }
-  // Everything else — PR creation, code review, bug fix, feature implementation → agent
   return { opType: 'agent', suggestedTitle: t };
 }
 
@@ -174,13 +169,6 @@ async function fetchUserInstallations(token: string): Promise<GitHubInstallation
   }
 }
 
-async function fetchGitHubUser(token: string): Promise<GitHubUser> {
-  const res = await fetch('https://api.github.com/user', {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
-  });
-  if (!res.ok) throw new Error(`GitHub API error ${res.status}`);
-  return res.json() as Promise<GitHubUser>;
-}
 
 async function fetchBranches(token: string, fullName: string): Promise<string[]> {
   try {
@@ -199,12 +187,15 @@ async function fetchGitHubRepos(token: string): Promise<GitHubRepo[]> {
   const repos: GitHubRepo[] = [];
   let page = 1;
   while (true) {
+    // Installation tokens use /installation/repositories to list only the repos
+    // the user explicitly granted access to — no extra repos exposed.
     const res = await fetch(
-      `https://api.github.com/user/repos?per_page=100&page=${page}&sort=updated&affiliation=owner,collaborator,organization_member`,
+      `https://api.github.com/installation/repositories?per_page=100&page=${page}`,
       { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' } }
     );
     if (!res.ok) throw new Error(`${res.status}`);
-    const batch = (await res.json()) as GitHubRepo[];
+    const data = (await res.json()) as { repositories: GitHubRepo[]; total_count: number };
+    const batch = data.repositories ?? [];
     repos.push(...batch);
     if (batch.length < 100) break;
     page++;
@@ -401,7 +392,6 @@ function BranchSelector({
 
 export default function CopilotView() {
   const { currentModel } = useModelAndProvider();
-  // activeTaskRun: the task currently being run by the agent (TaskRunView)
   const [activeTaskRun, setActiveTaskRun] = useState<Task | null>(null);
   const [activeGitHubOp, setActiveGitHubOp] = useState<ActiveGitHubOp | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(GITHUB_TOKEN_KEY));
@@ -413,22 +403,10 @@ export default function CopilotView() {
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [deviceCode, setDeviceCode] = useState<{
-    user_code: string;
-    verification_uri: string;
-    device_code: string;
-  } | null>(null);
-  const [pollStatus, setPollStatus] = useState<string | null>(null);
-  const pollAbortRef = useRef<boolean>(false);
-  const [patInput, setPatInput] = useState('');
-  const [showPat, setShowPat] = useState(false);
-  const [loadingPat, setLoadingPat] = useState(false);
+  const [waitingForBrowser, setWaitingForBrowser] = useState(false);
 
-  // GitHub App installation state
   const [appInstalled, setAppInstalled] = useState<boolean | null>(null);
   const [appSlug, setAppSlug] = useState<string | null>(null);
-
-  // Bot-identity mode: credentials live in .env (GITHUB_APP_ID + key), never entered by user
   const [botAppId, setBotAppId] = useState<string | null>(null);
   const [botMode, setBotMode] = useState(false);
 
@@ -449,7 +427,6 @@ export default function CopilotView() {
         if (token) {
           fetchBranches(token, repo.full_name).then((bs) => {
             setBranches(bs);
-            // Use the repo's default branch if available
             const defaultBranch = bs.find((b) => b === 'main') ?? bs[0] ?? 'main';
             setSelectedBranch(defaultBranch);
           });
@@ -476,7 +453,6 @@ export default function CopilotView() {
     localStorage.setItem(TASKS_KEY, JSON.stringify(t));
   }, []);
 
-  // On mount, check if GitHub App credentials are configured in .env
   useEffect(() => {
     window.electron.getGitHubAppConfig().then((config) => {
       if (config) {
@@ -486,8 +462,6 @@ export default function CopilotView() {
     });
   }, []);
 
-  // Returns an installation token (bot identity) if configured, otherwise the user OAuth token.
-  // All GitHub write operations go through this so attribution is always correct.
   const getApiToken = useCallback(
     async (repoOwner: string): Promise<string> => {
       if (botMode && botAppId) {
@@ -514,18 +488,18 @@ export default function CopilotView() {
   const loadRepos = useCallback(async (tok: string) => {
     setLoadingRepos(true);
     try {
+      // /installation/repositories requires a valid installation token — success proves the app is
+      // installed. /user/installations only works with user OAuth tokens, not installation tokens,
+      // so it cannot be used to determine installation status here.
       const [data, installations] = await Promise.all([
         fetchGitHubRepos(tok),
         fetchUserInstallations(tok),
       ]);
       setRepos(data);
+      setAppInstalled(true);
       if (installations.length > 0) {
-        setAppInstalled(true);
         setAppSlug(installations[0].app_slug);
-      } else {
-        setAppInstalled(false);
       }
-      // Restore previously selected repo if it's still accessible
       setSelectedRepo((prev) => {
         if (!prev) return null;
         const stillExists = data.find((r) => r.id === prev.id);
@@ -533,7 +507,6 @@ export default function CopilotView() {
           localStorage.removeItem(SELECTED_REPO_KEY);
           return null;
         }
-        // Fetch branches for the restored repo
         fetchBranches(tok, stillExists.full_name).then((bs) => {
           setBranches(bs);
           setSelectedBranch((b) => (bs.includes(b) ? b : (bs[0] ?? 'main')));
@@ -549,7 +522,6 @@ export default function CopilotView() {
         setToken(null);
         setUser(null);
       }
-      // Don't show raw API errors to the user
     } finally {
       setLoadingRepos(false);
     }
@@ -561,112 +533,57 @@ export default function CopilotView() {
     }
   }, [token, repos.length, loadingRepos, loadRepos]);
 
-  const startDeviceFlow = async () => {
-    // Abort any previous poll loop
-    pollAbortRef.current = true;
-    await new Promise((r) => setTimeout(r, 50));
-    pollAbortRef.current = false;
-
+  const signInWithGitHub = useCallback(async () => {
     setLoadingAuth(true);
     setError(null);
-    setDeviceCode(null);
-    setPollStatus(null);
-    try {
-      const flow = await window.electron.startGitHubDeviceFlow();
-      if ('error' in flow) throw new Error(flow.error);
+    setWaitingForBrowser(false);
 
-      setDeviceCode({
-        user_code: flow.user_code,
-        verification_uri: flow.verification_uri,
-        device_code: flow.device_code,
-      });
-
-      // Renderer-driven poll loop — lets us show live status per response
-      let intervalSeconds = flow.interval ?? 5;
-      const deadline = Date.now() + 10 * 60 * 1000;
-
-      while (Date.now() < deadline) {
-        if (pollAbortRef.current) return;
-
-        setPollStatus(`Checking… (next in ${intervalSeconds}s)`);
-        await new Promise((r) => setTimeout(r, intervalSeconds * 1000));
-
-        if (pollAbortRef.current) return;
-
-        const data = await window.electron.pollGitHubDeviceTokenOnce(flow.device_code);
-
-        if (data.access_token) {
-          setPollStatus('Authorized! Loading your profile…');
-          let githubUser: GitHubUser;
-          try {
-            githubUser = await fetchGitHubUser(data.access_token);
-          } catch {
-            githubUser = { login: 'github-user', name: null, avatar_url: '', html_url: '' };
-          }
-          localStorage.setItem(GITHUB_TOKEN_KEY, data.access_token);
-          localStorage.setItem(GITHUB_USER_KEY, JSON.stringify(githubUser));
-          setToken(data.access_token);
-          setUser(githubUser);
-          setDeviceCode(null);
-          setPollStatus(null);
-          await loadRepos(data.access_token);
-          return;
-        }
-
-        if (data.error === 'slow_down') {
-          intervalSeconds = data.interval ?? intervalSeconds + 5;
-          setPollStatus(`GitHub rate limit — waiting ${intervalSeconds}s before next check…`);
-          continue;
-        }
-
-        if (data.error === 'authorization_pending') {
-          setPollStatus('Waiting for you to authorize in the browser…');
-          continue;
-        }
-
-        if (data.error === 'network_error') {
-          // Transient — keep trying
-          continue;
-        }
-
-        throw new Error(data.error_description || data.error || 'Authentication failed');
-      }
-
-      throw new Error('Timed out after 10 minutes');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed');
-      setDeviceCode(null);
-      setPollStatus(null);
-    } finally {
+    const result = await window.electron.startGitHubAppInstall();
+    if ('error' in result) {
+      setError(result.error);
       setLoadingAuth(false);
+      return;
     }
-  };
 
-  const signInWithPat = async () => {
-    const pat = patInput.trim();
-    if (!pat) return;
-    setLoadingPat(true);
-    setError(null);
-    try {
-      let githubUser: GitHubUser;
+    setWaitingForBrowser(true);
+
+    // GitHub redirects to goose://github-auth?installation_id=XXX&setup_action=install
+    const handleCallback = async (url: string) => {
+      window.electron.offGitHubAuthCallback(handleCallback);
+      setWaitingForBrowser(false);
       try {
-        githubUser = await fetchGitHubUser(pat);
-      } catch {
-        githubUser = { login: 'github-user', name: null, avatar_url: '', html_url: '' };
+        const parsed = new URL(url);
+        const installationIdStr = parsed.searchParams.get('installation_id');
+        if (!installationIdStr) throw new Error('GitHub did not return an installation ID.');
+        const installationId = parseInt(installationIdStr, 10);
+
+        const accountResult = await window.electron.getGitHubInstallationAccount(installationId);
+        if ('error' in accountResult) throw new Error(accountResult.error);
+
+        const githubUser: GitHubUser = {
+          login: accountResult.login,
+          name: accountResult.login,
+          avatar_url: accountResult.avatar_url,
+          html_url: accountResult.html_url,
+        };
+
+        const tokenResult = await window.electron.getGitHubInstallationToken(accountResult.login);
+        if ('error' in tokenResult) throw new Error(tokenResult.error);
+
+        localStorage.setItem(GITHUB_TOKEN_KEY, tokenResult.token);
+        localStorage.setItem(GITHUB_USER_KEY, JSON.stringify(githubUser));
+        setToken(tokenResult.token);
+        setUser(githubUser);
+        await loadRepos(tokenResult.token);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Authorization failed');
+      } finally {
+        setLoadingAuth(false);
       }
-      localStorage.setItem(GITHUB_TOKEN_KEY, pat);
-      localStorage.setItem(GITHUB_USER_KEY, JSON.stringify(githubUser));
-      setToken(pat);
-      setUser(githubUser);
-      setPatInput('');
-      setShowPat(false);
-      await loadRepos(pat);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid token');
-    } finally {
-      setLoadingPat(false);
-    }
-  };
+    };
+
+    window.electron.onGitHubAuthCallback(handleCallback);
+  }, [loadRepos]);
 
   const createTask = useCallback(() => {
     if (!taskInput.trim() || !selectedRepo) return;
@@ -717,7 +634,6 @@ export default function CopilotView() {
       return;
     }
 
-    // Goose agent for complex tasks — open the TaskRunView directly
     saveTasks([newTask, ...tasks]);
     setActiveTaskRun(newTask);
   }, [taskInput, selectedRepo, tasks, saveTasks, getApiToken]);
@@ -747,13 +663,11 @@ export default function CopilotView() {
   const displayedTasks =
     taskTab === 'active' ? activeTasks : taskTab === 'archived' ? archivedTasks : suggestedTasks;
 
-  // ─── Direct GitHub operation view (no Goose agent) ───────────────────────
   if (activeGitHubOp) {
     const { task: opTask, opType, result, error, running } = activeGitHubOp;
 
     const handleBack = () => {
       if (!result) {
-        // cancelled — remove in-progress task
         saveTasks(tasks.filter((t) => t.id !== opTask.id));
       }
       setActiveGitHubOp(null);
@@ -924,7 +838,7 @@ export default function CopilotView() {
           <div className="text-center space-y-2">
             <h2 className="text-2xl font-light text-text-primary">Connect GitHub</h2>
             <p className="text-sm opacity-70 max-w-sm">
-              Sign in with GitHub to manage repositories, create PRs, and review code with Goose.
+              Sign in to manage repositories, create PRs, and review code with Goose.
             </p>
           </div>
 
@@ -935,109 +849,39 @@ export default function CopilotView() {
             </div>
           )}
 
-          {deviceCode ? (
-            <div className="flex flex-col items-center gap-3 w-full max-w-sm">
-              <p className="text-sm text-text-secondary text-center">
-                Enter this code at{' '}
+          <div className="flex flex-col items-center gap-3 w-full max-w-xs">
+            {waitingForBrowser ? (
+              <div className="flex flex-col items-center gap-3 w-full">
+                <div className="flex items-center gap-2 text-sm text-text-secondary">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Waiting for GitHub authorization…
+                </div>
                 <button
-                  className="underline text-text-primary"
-                  onClick={() => window.electron.openExternal(deviceCode.verification_uri)}
-                >
-                  {deviceCode.verification_uri}
-                </button>
-              </p>
-              <div className="flex items-center gap-2 px-6 py-3 bg-background-secondary border border-border rounded-xl">
-                <span className="font-mono text-2xl font-bold tracking-widest text-text-primary select-all">
-                  {deviceCode.user_code}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-text-secondary">
-                <RefreshCw className="w-3 h-3 animate-spin" />
-                {pollStatus ?? 'Waiting for you to authorize in the browser…'}
-              </div>
-            </div>
-          ) : showPat ? (
-            <div className="flex flex-col gap-3 w-full max-w-sm">
-              <p className="text-xs text-text-secondary text-center">
-                Create a token at{' '}
-                <button
-                  className="underline text-text-primary"
-                  onClick={() =>
-                    window.electron.openExternal(
-                      'https://github.com/settings/tokens/new?scopes=repo,read:user&description=Goose'
-                    )
-                  }
-                >
-                  github.com/settings/tokens
-                </button>{' '}
-                with <code className="text-xs bg-background-secondary px-1 rounded">repo</code>{' '}
-                scope, then paste it below.
-              </p>
-              <input
-                type="password"
-                value={patInput}
-                onChange={(e) => setPatInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && signInWithPat()}
-                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                className="w-full text-sm px-3 py-2 bg-background-secondary border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-border font-mono"
-                autoFocus
-              />
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
+                  className="text-xs text-text-secondary underline"
                   onClick={() => {
-                    setShowPat(false);
-                    setPatInput('');
-                    setError(null);
+                    window.electron.offGitHubAuthCallback(() => {});
+                    setWaitingForBrowser(false);
+                    setLoadingAuth(false);
                   }}
-                  className="flex-1 text-xs"
                 >
-                  Back
-                </Button>
-                <Button
-                  onClick={signInWithPat}
-                  disabled={!patInput.trim() || loadingPat}
-                  size="sm"
-                  className="flex-1 text-xs flex items-center gap-1.5"
-                >
-                  {loadingPat && <RefreshCw className="w-3 h-3 animate-spin" />}
-                  Connect
-                </Button>
+                  Cancel
+                </button>
               </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-3 w-full max-w-xs">
+            ) : (
               <Button
-                onClick={startDeviceFlow}
+                onClick={signInWithGitHub}
                 disabled={loadingAuth}
                 className="w-full flex items-center justify-center gap-2"
               >
-                {loadingAuth ? (
+                {loadingAuth && !waitingForBrowser ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 ) : (
                   <Github className="w-4 h-4" />
                 )}
-                {loadingAuth ? 'Starting…' : 'Sign in with GitHub'}
+                Sign in with GitHub
               </Button>
-              <div className="flex items-center gap-2 w-full">
-                <div className="flex-1 h-px bg-border" />
-                <span className="text-xs text-text-secondary">or</span>
-                <div className="flex-1 h-px bg-border" />
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowPat(true);
-                  setError(null);
-                }}
-                className="w-full flex items-center justify-center gap-2 text-sm"
-              >
-                <Key className="w-4 h-4" />
-                Use a Personal Access Token
-              </Button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </MainPanelLayout>
     );
