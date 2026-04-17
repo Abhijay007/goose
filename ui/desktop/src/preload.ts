@@ -1,4 +1,9 @@
 import Electron, { contextBridge, ipcRenderer, webUtils } from 'electron';
+
+const githubAuthListeners = new WeakMap<
+  (url: string) => void,
+  (event: Electron.IpcRendererEvent, url: string) => void
+>();
 import { Recipe } from './recipe';
 import { GooseApp } from './api';
 import type { Settings, SettingKey } from './utils/settings';
@@ -346,11 +351,15 @@ const electronAPI: ElectronAPI = {
   addRecentDir: (dir: string) => ipcRenderer.invoke('add-recent-dir', dir),
   onGitHubAuthCallback: (callback: (url: string) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, url: string) => callback(url);
+    githubAuthListeners.set(callback, wrapped);
     ipcRenderer.on('github-auth-callback', wrapped);
   },
   offGitHubAuthCallback: (callback: (url: string) => void) => {
-    ipcRenderer.removeAllListeners('github-auth-callback');
-    void callback;
+    const wrapped = githubAuthListeners.get(callback);
+    if (wrapped) {
+      ipcRenderer.removeListener('github-auth-callback', wrapped);
+      githubAuthListeners.delete(callback);
+    }
   },
   startGitHubAppInstall: () => ipcRenderer.invoke('start-github-app-install'),
   getGitHubInstallationAccount: (installationId: number) =>

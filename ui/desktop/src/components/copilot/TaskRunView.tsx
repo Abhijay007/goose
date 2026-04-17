@@ -23,8 +23,30 @@ import { reply, resumeAgent } from '../../api';
 import { createUserMessage } from '../../types/message';
 import type { ToolRequest, ToolResponse } from '../../api';
 import { useModelAndProvider } from '../ModelAndProviderContext';
+import { defineMessages, useIntl } from '../../i18n';
+import { errorMessage } from '../../utils/conversionUtils';
+import type { TaskStatus, GitHubRepo } from './types';
 
-export type TaskRunStatus = 'open' | 'merged' | 'closed' | 'review' | 'in_progress';
+const i18n = defineMessages({
+  statusStarting: { id: 'taskRunView.statusStarting', defaultMessage: 'Starting\u2026' },
+  statusWorking: { id: 'taskRunView.statusWorking', defaultMessage: 'Working\u2026' },
+  statusDone: { id: 'taskRunView.statusDone', defaultMessage: 'Done' },
+  statusFailed: { id: 'taskRunView.statusFailed', defaultMessage: 'Failed' },
+  startingAgent: { id: 'taskRunView.startingAgent', defaultMessage: 'Starting Goose agent\u2026' },
+  continuing: { id: 'taskRunView.continuing', defaultMessage: 'Continuing\u2026' },
+  pullRequestCreated: {
+    id: 'taskRunView.pullRequestCreated',
+    defaultMessage: 'Pull request created',
+  },
+  viewOnGitHub: { id: 'taskRunView.viewOnGitHub', defaultMessage: 'View on GitHub' },
+  taskComplete: { id: 'taskRunView.taskComplete', defaultMessage: 'Task complete' },
+  openRepository: { id: 'taskRunView.openRepository', defaultMessage: 'Open Repository' },
+  agentError: { id: 'taskRunView.agentError', defaultMessage: 'Agent encountered an error' },
+  goBack: { id: 'taskRunView.goBack', defaultMessage: 'Go back' },
+  openGooseSettings: { id: 'taskRunView.openGooseSettings', defaultMessage: 'Open Goose Settings' },
+});
+
+export type { TaskStatus as TaskRunStatus };
 
 export interface TaskRunTask {
   id: string;
@@ -32,15 +54,11 @@ export interface TaskRunTask {
   repo: string;
   repoUrl: string;
   sessionId?: string;
-  status?: TaskRunStatus;
+  status?: TaskStatus;
   prUrl?: string;
 }
 
-export interface GitHubRunRepo {
-  full_name: string;
-  html_url: string;
-  name: string;
-}
+export type GitHubRunRepo = Pick<GitHubRepo, 'full_name' | 'html_url' | 'name'>;
 
 type StepStatus = 'running' | 'done' | 'error';
 
@@ -69,9 +87,7 @@ function resolveToolCall(
   return null;
 }
 
-function resolveToolResult(
-  raw: Record<string, unknown>
-): { text?: string; error?: string } {
+function resolveToolResult(raw: Record<string, unknown>): { text?: string; error?: string } {
   // { status: 'success', value: CallToolResult } or { status: 'error', error: string }
   if (raw?.status === 'error') {
     return { error: String(raw.error ?? 'Tool error') };
@@ -95,21 +111,30 @@ function bareToolName(full: string): string {
   return idx === -1 ? full : full.substring(idx + 2);
 }
 
-function describeShellCommand(cmd: string): { label: string; icon: React.ComponentType<{ className?: string }> } {
+function describeShellCommand(cmd: string): {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+} {
   const c = cmd.trim();
   if (/^git clone/.test(c)) return { label: 'Cloning repository', icon: FolderOpen };
   if (/^git checkout -b/.test(c)) {
     const branch = c.split('-b')[1]?.trim().split(' ')[0] ?? '';
     return { label: `Creating branch: ${branch}`, icon: GitMerge };
   }
-  if (/^git (add|commit|push)/.test(c)) return { label: 'Committing and pushing changes', icon: GitMerge };
-  if (/\/pulls/.test(c) && /curl/.test(c)) return { label: 'Creating pull request via GitHub API', icon: GitPullRequest };
-  if (/\/issues/.test(c) && /curl/.test(c)) return { label: 'Creating issue via GitHub API', icon: Github };
+  if (/^git (add|commit|push)/.test(c))
+    return { label: 'Committing and pushing changes', icon: GitMerge };
+  if (/\/pulls/.test(c) && /curl/.test(c))
+    return { label: 'Creating pull request via GitHub API', icon: GitPullRequest };
+  if (/\/issues/.test(c) && /curl/.test(c))
+    return { label: 'Creating issue via GitHub API', icon: Github };
   if (/curl/.test(c)) return { label: 'Calling GitHub API', icon: Github };
-  if (/\b(npm|pnpm|yarn|pip|cargo)\s+(install|add)/.test(c)) return { label: 'Installing dependencies', icon: Terminal };
-  if (/\b(jest|pytest|cargo test|go test|npm test|pnpm test)/.test(c)) return { label: 'Running tests', icon: Check };
+  if (/\b(npm|pnpm|yarn|pip|cargo)\s+(install|add)/.test(c))
+    return { label: 'Installing dependencies', icon: Terminal };
+  if (/\b(jest|pytest|cargo test|go test|npm test|pnpm test)/.test(c))
+    return { label: 'Running tests', icon: Check };
   if (/^(cat|head|tail|less)\s/.test(c)) return { label: 'Reading file', icon: Eye };
-  if (/^(ls|find|tree)\s?/.test(c)) return { label: 'Exploring directory structure', icon: FolderOpen };
+  if (/^(ls|find|tree)\s?/.test(c))
+    return { label: 'Exploring directory structure', icon: FolderOpen };
   if (/^cd\s/.test(c)) return { label: `Navigating to ${c.slice(3).trim()}`, icon: FolderOpen };
   return { label: 'Running shell command', icon: Terminal };
 }
@@ -138,11 +163,23 @@ function describeToolCall(
       return { label: `${action} ${path}`, detail: path, icon: FileEdit };
     }
     case 'write':
-      return { label: `Writing ${String(args.path ?? '')}`, detail: String(args.path ?? ''), icon: FileEdit };
+      return {
+        label: `Writing ${String(args.path ?? '')}`,
+        detail: String(args.path ?? ''),
+        icon: FileEdit,
+      };
     case 'edit':
-      return { label: `Editing ${String(args.path ?? '')}`, detail: String(args.path ?? ''), icon: FileEdit };
+      return {
+        label: `Editing ${String(args.path ?? '')}`,
+        detail: String(args.path ?? ''),
+        icon: FileEdit,
+      };
     case 'read':
-      return { label: `Reading ${String(args.path ?? '')}`, detail: String(args.path ?? ''), icon: Eye };
+      return {
+        label: `Reading ${String(args.path ?? '')}`,
+        detail: String(args.path ?? ''),
+        icon: Eye,
+      };
     case 'tree':
       return { label: 'Reading directory structure', icon: FolderOpen };
     default:
@@ -155,14 +192,65 @@ function extractGitHubUrl(text: string): string | null {
   return m ? m[0] : null;
 }
 
+function buildTaskPrompt(
+  taskDescription: string,
+  token: string,
+  repo: GitHubRunRepo,
+  branch: string
+): string {
+  const cloneUrl = `https://x-access-token:${token}@github.com/${repo.full_name}.git`;
+  const remoteUrl = `https://github.com/${repo.full_name}.git`;
+  const pushUrl = `https://x-access-token:${token}@github.com/${repo.full_name}.git`;
+  const dir = `/tmp/goose-${repo.name}-${Date.now()}`;
 
-function StepItem({
-  step,
-  isLast,
-}: {
-  step: AgentStep;
-  isLast: boolean;
-}) {
+  return `You are an autonomous GitHub coding agent. Use only shell and text_editor tools.
+
+REPOSITORY: ${repo.full_name}
+BASE BRANCH: ${branch}
+GITHUB_TOKEN: ${token}
+
+STRICT RULES — follow these without exception:
+- NEVER run \`open\`, \`osascript\`, \`xdg-open\`, or any GUI command. Terminal only.
+- NEVER ask the user to sign in, authenticate, or do anything manually.
+- NEVER open a browser. All GitHub operations go through curl or git.
+- Work autonomously. No clarifying questions.
+
+GIT SETUP (run once at the start):
+  git clone ${cloneUrl} ${dir}
+  cd ${dir}
+  git config user.email "goose-copilot[bot]@users.noreply.github.com"
+  git config user.name "goose-copilot[bot]"
+  git remote set-url origin ${remoteUrl}
+
+IF THE TASK IS TO CREATE OR FIX CODE (make a PR, fix a bug, add a feature):
+  git checkout -b goose/<short-description>
+  # make changes with text_editor or shell
+  git add -A && git commit -m "..."
+  git push ${pushUrl} goose/<short-description>
+  curl -s -X POST https://api.github.com/repos/${repo.full_name}/pulls \\
+    -H "Authorization: Bearer ${token}" \\
+    -H "Content-Type: application/json" \\
+    -d '{"title":"...","head":"goose/<short-description>","base":"${branch}","body":"..."}'
+
+IF THE TASK IS TO REVIEW A PR (code review, check a pull request):
+  # Find the PR number from the task description, then:
+  curl -s https://api.github.com/repos/${repo.full_name}/pulls/<PR_NUMBER> \\
+    -H "Authorization: Bearer ${token}" | grep -E '"title"|"body"|"head"'
+  git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
+  git checkout pr-<PR_NUMBER>
+  git diff ${branch}...pr-<PR_NUMBER>
+  # After reviewing the diff, post your review as a comment:
+  curl -s -X POST https://api.github.com/repos/${repo.full_name}/issues/<PR_NUMBER>/comments \\
+    -H "Authorization: Bearer ${token}" \\
+    -H "Content-Type: application/json" \\
+    -d '{"body":"## Goose Code Review\\n\\n<your review here>"}'
+
+IMPORTANT: When you create or comment on a PR/issue, output its GitHub URL clearly so it can be tracked.
+
+TASK: ${taskDescription}`;
+}
+
+function StepItem({ step, isLast }: { step: AgentStep; isLast: boolean }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -238,6 +326,7 @@ export default function TaskRunView({
   onBack: () => void;
   onTaskUpdate: (updates: Partial<TaskRunTask>) => void;
 }) {
+  const intl = useIntl();
   const { getCurrentModelAndProvider } = useModelAndProvider();
   const [steps, setSteps] = useState<AgentStep[]>([]);
   const [runStatus, setRunStatus] = useState<'starting' | 'running' | 'done' | 'error'>('starting');
@@ -311,10 +400,7 @@ export default function TaskRunView({
                 const tc = resolveToolCall(req.toolCall as Record<string, unknown>);
                 if (tc) {
                   const { label, detail } = describeToolCall(tc.name, tc.arguments);
-                  setSteps((prev) => [
-                    ...prev,
-                    { id: req.id, label, detail, status: 'running' },
-                  ]);
+                  setSteps((prev) => [...prev, { id: req.id, label, detail, status: 'running' }]);
                 }
               } else if (content.type === 'toolResponse') {
                 const resp = content as ToolResponse & { type: 'toolResponse' };
@@ -369,8 +455,7 @@ export default function TaskRunView({
         }
       } catch (err) {
         if (!cancelled) {
-          const msg = err instanceof Error ? err.message : 'Agent failed';
-          setErrorMsg(msg);
+          setErrorMsg(errorMessage(err, 'Agent failed'));
           setRunStatus('error');
         }
       }
@@ -382,9 +467,9 @@ export default function TaskRunView({
       cancelled = true;
       abortRef.current?.abort();
     };
-  // Empty dep array is intentional: the task runs exactly once on mount.
-  // Props (task, repo, branch) are fixed for the lifetime of this component instance.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Empty dep array is intentional: the task runs exactly once on mount.
+    // Props (task, repo, branch) are fixed for the lifetime of this component instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCancel = () => {
@@ -417,25 +502,25 @@ export default function TaskRunView({
             {runStatus === 'starting' && (
               <span className="flex items-center gap-1.5 text-xs text-text-secondary">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                Starting…
+                {intl.formatMessage(i18n.statusStarting)}
               </span>
             )}
             {runStatus === 'running' && (
               <span className="flex items-center gap-1.5 text-xs text-blue-600 font-medium">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Working…
+                {intl.formatMessage(i18n.statusWorking)}
               </span>
             )}
             {runStatus === 'done' && (
               <span className="flex items-center gap-1.5 text-xs text-green-600 font-medium">
                 <Check className="w-3.5 h-3.5" />
-                Done
+                {intl.formatMessage(i18n.statusDone)}
               </span>
             )}
             {runStatus === 'error' && (
               <span className="flex items-center gap-1.5 text-xs text-red-500 font-medium">
                 <AlertCircle className="w-3.5 h-3.5" />
-                Failed
+                {intl.formatMessage(i18n.statusFailed)}
               </span>
             )}
           </div>
@@ -448,20 +533,24 @@ export default function TaskRunView({
             {runStatus === 'starting' && steps.length === 0 && (
               <div className="flex items-center gap-3 py-6 text-sm text-text-secondary">
                 <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                Starting Goose agent…
+                {intl.formatMessage(i18n.startingAgent)}
               </div>
             )}
 
             {/* Step timeline */}
             {steps.map((step, idx) => (
-              <StepItem key={step.id} step={step} isLast={idx === steps.length - 1 && runStatus !== 'running'} />
+              <StepItem
+                key={step.id}
+                step={step}
+                isLast={idx === steps.length - 1 && runStatus !== 'running'}
+              />
             ))}
 
             {/* "Still working" row after last completed step */}
             {runStatus === 'running' && steps.length > 0 && (
               <div className="flex items-center gap-3 pl-9 py-1 text-xs text-text-secondary">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                Continuing…
+                {intl.formatMessage(i18n.continuing)}
               </div>
             )}
 
@@ -476,7 +565,7 @@ export default function TaskRunView({
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-text-primary">
-                          Pull request created
+                          {intl.formatMessage(i18n.pullRequestCreated)}
                         </p>
                         <p className="text-xs text-text-secondary truncate mt-0.5">{prUrl}</p>
                       </div>
@@ -487,14 +576,16 @@ export default function TaskRunView({
                       size="sm"
                     >
                       <ExternalLink className="w-4 h-4" />
-                      View on GitHub
+                      {intl.formatMessage(i18n.viewOnGitHub)}
                     </Button>
                   </div>
                 ) : (
                   <div className="p-5 flex flex-col gap-2">
                     <div className="flex items-center gap-2">
                       <Check className="w-4 h-4 text-green-600 shrink-0" />
-                      <p className="text-sm font-semibold text-text-primary">Task complete</p>
+                      <p className="text-sm font-semibold text-text-primary">
+                        {intl.formatMessage(i18n.taskComplete)}
+                      </p>
                     </div>
                     {finalSummary.trim() && (
                       <p className="text-xs text-text-secondary whitespace-pre-wrap leading-relaxed max-h-32 overflow-hidden">
@@ -509,7 +600,7 @@ export default function TaskRunView({
                       className="w-full gap-2 mt-1"
                     >
                       <Github className="w-4 h-4" />
-                      Open Repository
+                      {intl.formatMessage(i18n.openRepository)}
                     </Button>
                   </div>
                 )}
@@ -522,20 +613,23 @@ export default function TaskRunView({
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                   <p className="text-sm text-red-700 dark:text-red-400">
-                    {errorMsg ?? 'Agent encountered an error'}
+                    {errorMsg ?? intl.formatMessage(i18n.agentError)}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button variant="outline" size="sm" onClick={onBack} className="text-xs">
-                    Go back
+                    {intl.formatMessage(i18n.goBack)}
                   </Button>
-                  {(errorMsg?.includes('model') || errorMsg?.includes('provider') || errorMsg?.includes('Provider') || errorMsg?.includes('configured')) && (
+                  {(errorMsg?.includes('model') ||
+                    errorMsg?.includes('provider') ||
+                    errorMsg?.includes('Provider') ||
+                    errorMsg?.includes('configured')) && (
                     <Button
                       size="sm"
                       className="text-xs"
                       onClick={() => window.electron.openExternal('goose://settings')}
                     >
-                      Open Goose Settings
+                      {intl.formatMessage(i18n.openGooseSettings)}
                     </Button>
                   )}
                 </div>
@@ -548,60 +642,4 @@ export default function TaskRunView({
       </div>
     </MainPanelLayout>
   );
-}
-
-function buildTaskPrompt(
-  taskDescription: string,
-  token: string,
-  repo: GitHubRunRepo,
-  branch: string
-): string {
-  const cloneUrl = `https://x-access-token:${token}@github.com/${repo.full_name}.git`;
-  const dir = `/tmp/goose-${repo.name}-${Date.now()}`;
-
-  return `You are an autonomous GitHub coding agent. Use only shell and text_editor tools.
-
-REPOSITORY: ${repo.full_name}
-BASE BRANCH: ${branch}
-GITHUB_TOKEN: ${token}
-
-STRICT RULES — follow these without exception:
-- NEVER run \`open\`, \`osascript\`, \`xdg-open\`, or any GUI command. Terminal only.
-- NEVER ask the user to sign in, authenticate, or do anything manually.
-- NEVER open a browser. All GitHub operations go through curl or git.
-- Work autonomously. No clarifying questions.
-
-GIT SETUP (run once at the start):
-  git clone ${cloneUrl} ${dir}
-  cd ${dir}
-  git config user.email "goose-copilot[bot]@users.noreply.github.com"
-  git config user.name "goose-copilot[bot]"
-  git remote set-url origin ${cloneUrl}
-
-IF THE TASK IS TO CREATE OR FIX CODE (make a PR, fix a bug, add a feature):
-  git checkout -b goose/<short-description>
-  # make changes with text_editor or shell
-  git add -A && git commit -m "..."
-  git push origin goose/<short-description>
-  curl -s -X POST https://api.github.com/repos/${repo.full_name}/pulls \\
-    -H "Authorization: Bearer ${token}" \\
-    -H "Content-Type: application/json" \\
-    -d '{"title":"...","head":"goose/<short-description>","base":"${branch}","body":"..."}'
-
-IF THE TASK IS TO REVIEW A PR (code review, check a pull request):
-  # Find the PR number from the task description, then:
-  curl -s https://api.github.com/repos/${repo.full_name}/pulls/<PR_NUMBER> \\
-    -H "Authorization: Bearer ${token}" | grep -E '"title"|"body"|"head"'
-  git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
-  git checkout pr-<PR_NUMBER>
-  git diff ${branch}...pr-<PR_NUMBER>
-  # After reviewing the diff, post your review as a comment:
-  curl -s -X POST https://api.github.com/repos/${repo.full_name}/issues/<PR_NUMBER>/comments \\
-    -H "Authorization: Bearer ${token}" \\
-    -H "Content-Type: application/json" \\
-    -d '{"body":"## Goose Code Review\\n\\n<your review here>"}'
-
-IMPORTANT: When you create or comment on a PR/issue, output its GitHub URL clearly so it can be tracked.
-
-TASK: ${taskDescription}`;
 }

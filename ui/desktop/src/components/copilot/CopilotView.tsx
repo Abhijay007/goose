@@ -20,187 +20,274 @@ import {
 } from 'lucide-react';
 import { MainPanelLayout } from '../Layout/MainPanelLayout';
 import { Button } from '../ui/button';
+import { Input } from '../ui/input';
 import { ScrollArea } from '../ui/scroll-area';
 import { Skeleton } from '../ui/skeleton';
 import { useModelAndProvider } from '../ModelAndProviderContext';
 import { SwitchModelModal } from '../settings/models/subcomponents/SwitchModelModal';
 import { useNavigation } from '../../hooks/useNavigation';
+import { defineMessages, useIntl } from '../../i18n';
+import { errorMessage } from '../../utils/conversionUtils';
 import TaskRunView from './TaskRunView';
+import {
+  githubCreateIssue,
+  fetchGitHubIssues,
+  fetchUserInstallations,
+  fetchBranches,
+  fetchGitHubRepos,
+} from './github';
+import type {
+  TaskStatus,
+  TaskTab,
+  MainTab,
+  GitHubOpType,
+  GitHubUser,
+  GitHubRepo,
+  Task,
+  ActiveGitHubOp,
+} from './types';
+
+const i18n = defineMessages({
+  // StatusBadge
+  statusMerged: { id: 'copilotView.statusMerged', defaultMessage: 'Merged' },
+  statusOpen: { id: 'copilotView.statusOpen', defaultMessage: 'Open' },
+  statusInReview: { id: 'copilotView.statusInReview', defaultMessage: 'In Review' },
+  statusInProgress: { id: 'copilotView.statusInProgress', defaultMessage: 'In Progress' },
+  statusClosed: { id: 'copilotView.statusClosed', defaultMessage: 'Closed' },
+  // RepoSelector
+  loadingRepos: { id: 'copilotView.loadingRepos', defaultMessage: 'Loading repos\u2026' },
+  selectRepositories: {
+    id: 'copilotView.selectRepositories',
+    defaultMessage: 'Select repositories',
+  },
+  searchRepositoriesPlaceholder: {
+    id: 'copilotView.searchRepositoriesPlaceholder',
+    defaultMessage: 'Search repositories\u2026',
+  },
+  noReposFound: { id: 'copilotView.noReposFound', defaultMessage: 'No repos found' },
+  clearSelection: { id: 'copilotView.clearSelection', defaultMessage: 'Clear selection' },
+  // Auth screen
+  connectGitHub: { id: 'copilotView.connectGitHub', defaultMessage: 'Connect GitHub' },
+  signInDescription: {
+    id: 'copilotView.signInDescription',
+    defaultMessage: 'Sign in to manage repositories, create PRs, and review code with Goose.',
+  },
+  waitingForAuthorization: {
+    id: 'copilotView.waitingForAuthorization',
+    defaultMessage: 'Waiting for GitHub authorization\u2026',
+  },
+  cancel: { id: 'copilotView.cancel', defaultMessage: 'Cancel' },
+  signInWithGitHub: { id: 'copilotView.signInWithGitHub', defaultMessage: 'Sign in with GitHub' },
+  // GitHub op views
+  creatingIssue: { id: 'copilotView.creatingIssue', defaultMessage: 'Creating issue\u2026' },
+  appNotInstalledHint: {
+    id: 'copilotView.appNotInstalledHint',
+    defaultMessage:
+      'Your GitHub App is not installed on this repository. You need to install it (not just authorize it) before it can create issues or PRs.',
+  },
+  installGitHubApp: { id: 'copilotView.installGitHubApp', defaultMessage: 'Install GitHub App' },
+  installGitHubAppArrow: {
+    id: 'copilotView.installGitHubAppArrow',
+    defaultMessage: 'Install GitHub App \u2192',
+  },
+  afterInstallingNote: {
+    id: 'copilotView.afterInstallingNote',
+    defaultMessage: 'After installing, come back and try again. No need to sign out.',
+  },
+  issueCreated: { id: 'copilotView.issueCreated', defaultMessage: 'Issue created!' },
+  viewOnGitHub: { id: 'copilotView.viewOnGitHub', defaultMessage: 'View on GitHub' },
+  openIssuesIn: { id: 'copilotView.openIssuesIn', defaultMessage: 'Open issues in' },
+  loadingIssues: { id: 'copilotView.loadingIssues', defaultMessage: 'Loading issues\u2026' },
+  noOpenIssues: { id: 'copilotView.noOpenIssues', defaultMessage: 'No open issues.' },
+  // App-not-installed warning banner
+  appNotInstalledTitle: {
+    id: 'copilotView.appNotInstalledTitle',
+    defaultMessage: 'GitHub App not installed on any repository',
+  },
+  appNotInstalledBody: {
+    id: 'copilotView.appNotInstalledBody',
+    defaultMessage:
+      'Authorization alone isn\u2019t enough \u2014 you need to install your GitHub App on the repos you want Goose to access. This is what lets it create issues, push code, and open PRs.',
+  },
+  recheck: { id: 'copilotView.recheck', defaultMessage: 'Re-check' },
+  // Dashboard
+  overviewTitle: { id: 'copilotView.overviewTitle', defaultMessage: 'Overview' },
+  overviewDescription: {
+    id: 'copilotView.overviewDescription',
+    defaultMessage: 'Your most recent and/or active tasks',
+  },
+  addIntegration: { id: 'copilotView.addIntegration', defaultMessage: 'Add Integration' },
+  taskPlaceholderRepo: {
+    id: 'copilotView.taskPlaceholderRepo',
+    defaultMessage:
+      'What should Goose do in {repo}? e.g. "Fix the login bug and open a PR", "Review PR #42", "Create a new auth module"',
+  },
+  taskPlaceholderNoRepo: {
+    id: 'copilotView.taskPlaceholderNoRepo',
+    defaultMessage: 'Select a repository below, then describe a task for Goose\u2026',
+  },
+  noActiveTasks: {
+    id: 'copilotView.noActiveTasks',
+    defaultMessage: 'No active tasks yet. Create one above!',
+  },
+  noArchivedTasks: { id: 'copilotView.noArchivedTasks', defaultMessage: 'No archived tasks' },
+  noSuggestions: { id: 'copilotView.noSuggestions', defaultMessage: 'No suggestions available' },
+  today: { id: 'copilotView.today', defaultMessage: 'Today' },
+  useThis: { id: 'copilotView.useThis', defaultMessage: 'Use This' },
+  viewPR: { id: 'copilotView.viewPR', defaultMessage: 'View PR' },
+  viewTask: { id: 'copilotView.viewTask', defaultMessage: 'View Task' },
+  // Integrations tab
+  integrationsTitle: { id: 'copilotView.integrationsTitle', defaultMessage: 'Integrations' },
+  integrationsDescription: {
+    id: 'copilotView.integrationsDescription',
+    defaultMessage: 'Connect tools to enhance Goose\u2019s capabilities',
+  },
+  connected: { id: 'copilotView.connected', defaultMessage: 'Connected' },
+  connectedAs: { id: 'copilotView.connectedAs', defaultMessage: 'Connected as @{login}' },
+  moreIntegrationsSoon: {
+    id: 'copilotView.moreIntegrationsSoon',
+    defaultMessage: 'More integrations coming soon',
+  },
+  // Automation tab
+  automationTitle: { id: 'copilotView.automationTitle', defaultMessage: 'Automation' },
+  automationDescription: {
+    id: 'copilotView.automationDescription',
+    defaultMessage: 'Trigger Goose automatically on GitHub events',
+  },
+  autoReviewTitle: { id: 'copilotView.autoReviewTitle', defaultMessage: 'Auto-review on PR open' },
+  autoReviewDescription: {
+    id: 'copilotView.autoReviewDescription',
+    defaultMessage:
+      'Goose posts a code review comment whenever a pull request is opened or updated in the selected repository.',
+  },
+  autoMergeTitle: { id: 'copilotView.autoMergeTitle', defaultMessage: 'Auto-merge on approval' },
+  autoMergeDescription: {
+    id: 'copilotView.autoMergeDescription',
+    defaultMessage:
+      'Automatically merge PRs once Goose\u2019s review passes and all checks are green.',
+  },
+  issueTriageTitle: { id: 'copilotView.issueTriageTitle', defaultMessage: 'Issue triage' },
+  issueTriageDescription: {
+    id: 'copilotView.issueTriageDescription',
+    defaultMessage: 'Goose labels and responds to new issues with an initial triage summary.',
+  },
+  comingSoon: { id: 'copilotView.comingSoon', defaultMessage: 'Coming soon' },
+  howToEnableTitle: {
+    id: 'copilotView.howToEnableTitle',
+    defaultMessage: 'How to enable automations',
+  },
+  howToEnableStep1: {
+    id: 'copilotView.howToEnableStep1',
+    defaultMessage:
+      'Go to your GitHub App settings and add a webhook URL pointing to your Goose server.',
+  },
+  howToEnableStep2: {
+    id: 'copilotView.howToEnableStep2',
+    defaultMessage: 'Select the events you want to trigger (Pull requests, Issues, etc.).',
+  },
+  howToEnableStep3: {
+    id: 'copilotView.howToEnableStep3',
+    defaultMessage: 'Goose will listen and respond automatically whenever those events fire.',
+  },
+  openGitHubAppSettings: {
+    id: 'copilotView.openGitHubAppSettings',
+    defaultMessage: 'Open GitHub App settings \u2192',
+  },
+  // Insights tab
+  insightsTitle: { id: 'copilotView.insightsTitle', defaultMessage: 'Insights' },
+  insightsDescription: {
+    id: 'copilotView.insightsDescription',
+    defaultMessage: 'Activity and metrics across your repositories',
+  },
+  tasksCreated: { id: 'copilotView.tasksCreated', defaultMessage: 'Tasks created' },
+  allTime: { id: 'copilotView.allTime', defaultMessage: 'all time' },
+  activeLabel: { id: 'copilotView.activeLabel', defaultMessage: 'Active' },
+  inProgressOrOpen: { id: 'copilotView.inProgressOrOpen', defaultMessage: 'in progress or open' },
+  completedLabel: { id: 'copilotView.completedLabel', defaultMessage: 'Completed' },
+  mergedLabel: { id: 'copilotView.mergedLabel', defaultMessage: 'merged' },
+  repositoriesWorkedOn: {
+    id: 'copilotView.repositoriesWorkedOn',
+    defaultMessage: 'Repositories worked on',
+  },
+  noTasksYet: {
+    id: 'copilotView.noTasksYet',
+    defaultMessage: 'No tasks yet \u2014 create one from the dashboard.',
+  },
+  taskCount: {
+    id: 'copilotView.taskCount',
+    defaultMessage: '{count, plural, one {# task} other {# tasks}}',
+  },
+  statusBreakdown: { id: 'copilotView.statusBreakdown', defaultMessage: 'Status breakdown' },
+  activeRepository: { id: 'copilotView.activeRepository', defaultMessage: 'Active repository' },
+  // Settings tab
+  settingsTitle: { id: 'copilotView.settingsTitle', defaultMessage: 'Settings' },
+  settingsDescription: {
+    id: 'copilotView.settingsDescription',
+    defaultMessage: 'Manage your Copilot preferences',
+  },
+  githubAccount: { id: 'copilotView.githubAccount', defaultMessage: 'GitHub Account' },
+  signOut: { id: 'copilotView.signOut', defaultMessage: 'Sign out' },
+  repositories: { id: 'copilotView.repositories', defaultMessage: 'Repositories' },
+  reposLoaded: { id: 'copilotView.reposLoaded', defaultMessage: '{count} repos loaded' },
+  refresh: { id: 'copilotView.refresh', defaultMessage: 'Refresh' },
+  botIdentityTitle: {
+    id: 'copilotView.botIdentityTitle',
+    defaultMessage: 'GitHub App \u2014 Bot Identity',
+  },
+  botIdentityDescription: {
+    id: 'copilotView.botIdentityDescription',
+    defaultMessage:
+      'Actions appear as {appSlug}[bot] \u2014 like Cursor, Tembo, and Claude Code Review',
+  },
+  botActive: { id: 'copilotView.botActive', defaultMessage: 'Active' },
+  botNotConfigured: { id: 'copilotView.botNotConfigured', defaultMessage: 'Not configured' },
+  botAppId: { id: 'copilotView.botAppId', defaultMessage: 'App ID: {appId}' },
+  botActionsShowAs: {
+    id: 'copilotView.botActionsShowAs',
+    defaultMessage: 'All actions show as {appSlug}[bot]',
+  },
+  botSetupHint: {
+    id: 'copilotView.botSetupHint',
+    defaultMessage:
+      'Set {appId} and {keyPath} in your {envFile} file to enable bot identity. Actions currently show as @{login}.',
+  },
+});
 
 const GITHUB_TOKEN_KEY = 'copilot_github_token';
 const GITHUB_USER_KEY = 'copilot_github_user';
 const TASKS_KEY = 'copilot_tasks';
 const SELECTED_REPO_KEY = 'copilot_selected_repo';
 
-type TaskStatus = 'open' | 'merged' | 'closed' | 'review' | 'in_progress';
-type TaskTab = 'active' | 'archived' | 'suggested';
-type MainTab = 'dashboard' | 'integrations' | 'automation' | 'insights' | 'settings';
-
-interface GitHubUser {
-  login: string;
-  name: string | null;
-  avatar_url: string;
-  html_url: string;
-}
-
-interface GitHubRepo {
-  id: number;
-  full_name: string;
-  name: string;
-  description: string | null;
-  html_url: string;
-  private: boolean;
-  language: string | null;
-  updated_at: string;
-  owner: { login: string };
-}
-
-interface Task {
-  id: string;
-  title: string;
-  repo: string;
-  repoUrl: string;
-  status: TaskStatus;
-  createdAt: string;
-  sessionId?: string;
-  additions?: number;
-  deletions?: number;
-  prUrl?: string;
-  prNumber?: number;
-  contributors?: number;
-}
-
-type GitHubOpType = 'create_issue' | 'list_issues' | 'agent';
-
-interface GitHubIssue {
-  number: number;
-  title: string;
-  html_url: string;
-  state: string;
-  body: string | null;
-}
-
-interface ActiveGitHubOp {
-  task: Task;
-  opType: Exclude<GitHubOpType, 'agent'>;
-  suggestedTitle: string;
-  result?: GitHubIssue;
-  issues?: GitHubIssue[];
-  error?: string;
-  running: boolean;
-}
+const SUGGESTED_TASK_TEMPLATES = [
+  'Review open pull requests and post a summary',
+  'Find and fix failing tests, then open a PR',
+  'Audit dependencies for security vulnerabilities',
+  'Improve error handling and add better logging',
+  'Write missing unit tests for core modules',
+];
 
 function detectGitHubOp(task: string): { opType: GitHubOpType; suggestedTitle: string } {
   const t = task.trim();
-  if (/^(create|open|add|file|make|new)\s+(a\s+)?(new\s+)?(github\s+)?(issue|bug report|ticket)[:\s-]*/i.test(t)) {
-    const suggestedTitle = t
-      .replace(/^(create|open|add|file|make|new)\s+(a\s+)?(new\s+)?(github\s+)?(issue|bug report|ticket)[:\s-]*/i, '')
-      .trim() || t;
+  if (
+    /^(create|open|add|file|make|new)\s+(a\s+)?(new\s+)?(github\s+)?(issue|bug report|ticket)[:\s-]*/i.test(
+      t
+    )
+  ) {
+    const suggestedTitle =
+      t
+        .replace(
+          /^(create|open|add|file|make|new)\s+(a\s+)?(new\s+)?(github\s+)?(issue|bug report|ticket)[:\s-]*/i,
+          ''
+        )
+        .trim() || t;
     return { opType: 'create_issue', suggestedTitle };
   }
-  if (/^(list|show|get|fetch|display)\s+(all\s+|open\s+|closed\s+)?(issues?|bugs?|tickets?)/i.test(t)) {
+  if (
+    /^(list|show|get|fetch|display)\s+(all\s+|open\s+|closed\s+)?(issues?|bugs?|tickets?)/i.test(t)
+  ) {
     return { opType: 'list_issues', suggestedTitle: t };
   }
   return { opType: 'agent', suggestedTitle: t };
-}
-
-async function githubCreateIssue(
-  token: string,
-  repo: string,
-  title: string,
-  body: string
-): Promise<GitHubIssue> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/issues`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ title, body }),
-  });
-  if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(err.message ?? `GitHub API error ${res.status}`);
-  }
-  return res.json() as Promise<GitHubIssue>;
-}
-
-async function fetchGitHubIssues(
-  token: string,
-  repo: string,
-  state: 'open' | 'closed' | 'all' = 'open'
-): Promise<GitHubIssue[]> {
-  const res = await fetch(
-    `https://api.github.com/repos/${repo}/issues?state=${state}&per_page=30&sort=updated`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-      },
-    }
-  );
-  if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(err.message ?? `GitHub API error ${res.status}`);
-  }
-  const data = (await res.json()) as GitHubIssue[];
-  // Filter out pull requests (GitHub returns PRs in /issues endpoint)
-  return data.filter((i) => !('pull_request' in i));
-}
-
-interface GitHubInstallation {
-  id: number;
-  app_slug: string;
-  app_id: number;
-  account: { login: string } | null;
-}
-
-async function fetchUserInstallations(token: string): Promise<GitHubInstallation[]> {
-  try {
-    const res = await fetch('https://api.github.com/user/installations?per_page=100', {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
-    });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { installations: GitHubInstallation[] };
-    return data.installations ?? [];
-  } catch {
-    return [];
-  }
-}
-
-
-async function fetchBranches(token: string, fullName: string): Promise<string[]> {
-  try {
-    const res = await fetch(`https://api.github.com/repos/${fullName}/branches?per_page=100`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
-    });
-    if (!res.ok) return ['main'];
-    const data = (await res.json()) as { name: string }[];
-    return data.map((b) => b.name);
-  } catch {
-    return ['main'];
-  }
-}
-
-async function fetchGitHubRepos(token: string): Promise<GitHubRepo[]> {
-  const repos: GitHubRepo[] = [];
-  let page = 1;
-  while (true) {
-    // Installation tokens use /installation/repositories to list only the repos
-    // the user explicitly granted access to — no extra repos exposed.
-    const res = await fetch(
-      `https://api.github.com/installation/repositories?per_page=100&page=${page}`,
-      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' } }
-    );
-    if (!res.ok) throw new Error(`${res.status}`);
-    const data = (await res.json()) as { repositories: GitHubRepo[]; total_count: number };
-    const batch = data.repositories ?? [];
-    repos.push(...batch);
-    if (batch.length < 100) break;
-    page++;
-  }
-  return repos;
 }
 
 function timeAgo(iso: string): string {
@@ -214,33 +301,34 @@ function timeAgo(iso: string): string {
 }
 
 function StatusBadge({ status }: { status: TaskStatus }) {
+  const intl = useIntl();
   if (status === 'merged')
     return (
       <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 font-medium">
-        <GitMerge className="w-3 h-3" /> Merged
+        <GitMerge className="w-3 h-3" /> {intl.formatMessage(i18n.statusMerged)}
       </span>
     );
   if (status === 'open')
     return (
       <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-medium">
-        <GitPullRequest className="w-3 h-3" /> Open
+        <GitPullRequest className="w-3 h-3" /> {intl.formatMessage(i18n.statusOpen)}
       </span>
     );
   if (status === 'review')
     return (
       <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 font-medium">
-        <Eye className="w-3 h-3" /> In Review
+        <Eye className="w-3 h-3" /> {intl.formatMessage(i18n.statusInReview)}
       </span>
     );
   if (status === 'in_progress')
     return (
       <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium">
-        <Loader2 className="w-3 h-3 animate-spin" /> In Progress
+        <Loader2 className="w-3 h-3 animate-spin" /> {intl.formatMessage(i18n.statusInProgress)}
       </span>
     );
   return (
     <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 font-medium">
-      <X className="w-3 h-3" /> Closed
+      <X className="w-3 h-3" /> {intl.formatMessage(i18n.statusClosed)}
     </span>
   );
 }
@@ -256,6 +344,7 @@ function RepoSelector({
   onSelect: (r: GitHubRepo | null) => void;
   loading: boolean;
 }) {
+  const intl = useIntl();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const ref = useRef<HTMLDivElement>(null);
@@ -270,6 +359,12 @@ function RepoSelector({
 
   const filtered = repos.filter((r) => r.full_name.toLowerCase().includes(search.toLowerCase()));
 
+  const triggerLabel = loading
+    ? intl.formatMessage(i18n.loadingRepos)
+    : selected
+      ? selected.full_name
+      : intl.formatMessage(i18n.selectRepositories);
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -277,26 +372,25 @@ function RepoSelector({
         className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-md border border-border bg-background-primary hover:bg-background-secondary transition-colors"
       >
         <Github className="w-3.5 h-3.5 text-text-secondary" />
-        <span className="text-text-secondary">
-          {loading ? 'Loading repos…' : selected ? selected.full_name : 'Select repositories'}
-        </span>
+        <span className="text-text-secondary">{triggerLabel}</span>
         <ChevronDown className="w-3.5 h-3.5 text-text-secondary" />
       </button>
       {open && (
         <div className="absolute top-full left-0 mt-1 w-72 bg-background-primary border border-border rounded-lg shadow-lg z-50 overflow-hidden">
           <div className="p-2 border-b border-border">
-            <input
+            <Input
               autoFocus
-              type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search repositories…"
-              className="w-full text-sm px-2 py-1.5 bg-background-secondary rounded-md focus:outline-none"
+              placeholder={intl.formatMessage(i18n.searchRepositoriesPlaceholder)}
+              className="h-8 text-sm"
             />
           </div>
           <ScrollArea className="max-h-56">
             {filtered.length === 0 ? (
-              <p className="text-xs text-text-secondary text-center py-4">No repos found</p>
+              <p className="text-xs text-text-secondary text-center py-4">
+                {intl.formatMessage(i18n.noReposFound)}
+              </p>
             ) : (
               filtered.map((r) => (
                 <button
@@ -325,7 +419,7 @@ function RepoSelector({
                 }}
                 className="w-full text-xs text-text-secondary hover:text-text-primary text-center py-1"
               >
-                Clear selection
+                {intl.formatMessage(i18n.clearSelection)}
               </button>
             </div>
           )}
@@ -388,9 +482,8 @@ function BranchSelector({
   );
 }
 
-
-
 export default function CopilotView() {
+  const intl = useIntl();
   const { currentModel } = useModelAndProvider();
   const [activeTaskRun, setActiveTaskRun] = useState<Task | null>(null);
   const [activeGitHubOp, setActiveGitHubOp] = useState<ActiveGitHubOp | null>(null);
@@ -474,7 +567,6 @@ export default function CopilotView() {
     },
     [botMode, botAppId, token]
   );
-
 
   const signOut = useCallback(() => {
     localStorage.removeItem(GITHUB_TOKEN_KEY);
@@ -576,7 +668,7 @@ export default function CopilotView() {
         setUser(githubUser);
         await loadRepos(tokenResult.token);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Authorization failed');
+        setError(errorMessage(err, 'Authorization failed'));
       } finally {
         setLoadingAuth(false);
       }
@@ -608,15 +700,29 @@ export default function CopilotView() {
         saveTasks([newTask, ...tasks]);
         setActiveGitHubOp({ task: newTask, opType, suggestedTitle, running: true });
         getApiToken(repoOwner)
-          .then((apiToken) => githubCreateIssue(apiToken, selectedRepo.full_name, suggestedTitle, ''))
+          .then((apiToken) =>
+            githubCreateIssue(apiToken, selectedRepo.full_name, suggestedTitle, '')
+          )
           .then((issue) => {
-            const updatedTask = { ...newTask, status: 'open' as TaskStatus, prUrl: issue.html_url, prNumber: issue.number };
+            const updatedTask = {
+              ...newTask,
+              status: 'open' as TaskStatus,
+              prUrl: issue.html_url,
+              prNumber: issue.number,
+            };
             saveTasks([updatedTask, ...tasks.filter((t) => t.id !== newTask.id)]);
             setActiveGitHubOp((prev) => prev && { ...prev, result: issue, running: false });
           })
           .catch((err) => {
             saveTasks(tasks.filter((t) => t.id !== newTask.id));
-            setActiveGitHubOp((prev) => prev && { ...prev, running: false, error: err instanceof Error ? err.message : 'Failed to create issue' });
+            setActiveGitHubOp(
+              (prev) =>
+                prev && {
+                  ...prev,
+                  running: false,
+                  error: errorMessage(err, 'Failed to create issue'),
+                }
+            );
           });
       } else if (opType === 'list_issues') {
         saveTasks([newTask, ...tasks]);
@@ -628,7 +734,14 @@ export default function CopilotView() {
             setActiveGitHubOp((prev) => prev && { ...prev, issues, running: false });
           })
           .catch((err) => {
-            setActiveGitHubOp((prev) => prev && { ...prev, running: false, error: err instanceof Error ? err.message : 'Failed to load issues' });
+            setActiveGitHubOp(
+              (prev) =>
+                prev && {
+                  ...prev,
+                  running: false,
+                  error: errorMessage(err, 'Failed to load issues'),
+                }
+            );
           });
       }
       return;
@@ -642,13 +755,6 @@ export default function CopilotView() {
     (t) => t.status === 'in_progress' || t.status === 'open' || t.status === 'review'
   );
   const archivedTasks = tasks.filter((t) => t.status === 'merged' || t.status === 'closed');
-  const SUGGESTED_TASK_TEMPLATES = [
-    'Review open pull requests and post a summary',
-    'Find and fix failing tests, then open a PR',
-    'Audit dependencies for security vulnerabilities',
-    'Improve error handling and add better logging',
-    'Write missing unit tests for core modules',
-  ];
   const suggestedTasks: Task[] = repos.slice(0, 3).flatMap((r, ri) => [
     {
       id: `suggested-${r.id}`,
@@ -695,7 +801,7 @@ export default function CopilotView() {
               {opType === 'create_issue' && running && (
                 <div className="flex flex-col items-center gap-3 py-12 text-sm text-text-secondary">
                   <Loader2 className="w-6 h-6 animate-spin" />
-                  Creating issue…
+                  {intl.formatMessage(i18n.creatingIssue)}
                 </div>
               )}
               {opType === 'create_issue' && !running && error && (
@@ -707,8 +813,7 @@ export default function CopilotView() {
                   {(error.includes('not accessible') || error.includes('403')) && (
                     <div className="pl-6 flex flex-col gap-2">
                       <p className="text-xs opacity-80">
-                        Your GitHub App is not installed on this repository. You need to{' '}
-                        <strong>install</strong> it (not just authorize it) before it can create issues or PRs.
+                        {intl.formatMessage(i18n.appNotInstalledHint)}
                       </p>
                       <Button
                         size="sm"
@@ -721,10 +826,10 @@ export default function CopilotView() {
                           )
                         }
                       >
-                        Install GitHub App →
+                        {intl.formatMessage(i18n.installGitHubAppArrow)}
                       </Button>
                       <p className="text-xs opacity-70">
-                        After installing, come back and try again. No need to sign out.
+                        {intl.formatMessage(i18n.afterInstallingNote)}
                       </p>
                     </div>
                   )}
@@ -736,7 +841,9 @@ export default function CopilotView() {
                     <Check className="w-6 h-6 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <p className="text-base font-semibold text-text-primary">Issue created!</p>
+                    <p className="text-base font-semibold text-text-primary">
+                      {intl.formatMessage(i18n.issueCreated)}
+                    </p>
                     <p className="text-sm text-text-secondary mt-1">
                       #{result.number} · {result.title}
                     </p>
@@ -748,7 +855,7 @@ export default function CopilotView() {
                     className="gap-2"
                   >
                     <Github className="w-4 h-4" />
-                    View on GitHub
+                    {intl.formatMessage(i18n.viewOnGitHub)}
                   </Button>
                 </div>
               )}
@@ -757,14 +864,14 @@ export default function CopilotView() {
                   <div className="flex items-center gap-2 text-sm text-text-secondary">
                     <Github className="w-4 h-4" />
                     <span>
-                      Open issues in{' '}
+                      {intl.formatMessage(i18n.openIssuesIn)}{' '}
                       <span className="font-medium text-text-primary">{opTask.repo}</span>
                     </span>
                   </div>
                   {running && (
                     <div className="flex items-center gap-2 text-sm text-text-secondary py-8 justify-center">
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading issues…
+                      {intl.formatMessage(i18n.loadingIssues)}
                     </div>
                   )}
                   {error && (
@@ -773,9 +880,13 @@ export default function CopilotView() {
                       {error}
                     </div>
                   )}
-                  {!running && !error && activeGitHubOp?.issues && (
-                    activeGitHubOp.issues.length === 0 ? (
-                      <p className="text-sm text-text-secondary text-center py-8">No open issues.</p>
+                  {!running &&
+                    !error &&
+                    activeGitHubOp?.issues &&
+                    (activeGitHubOp.issues.length === 0 ? (
+                      <p className="text-sm text-text-secondary text-center py-8">
+                        {intl.formatMessage(i18n.noOpenIssues)}
+                      </p>
                     ) : (
                       <div className="divide-y divide-border border border-border rounded-xl overflow-hidden">
                         {activeGitHubOp.issues.map((issue) => (
@@ -789,16 +900,13 @@ export default function CopilotView() {
                               <p className="text-sm font-medium text-text-primary truncate">
                                 {issue.title}
                               </p>
-                              <p className="text-xs text-text-secondary mt-0.5">
-                                #{issue.number}
-                              </p>
+                              <p className="text-xs text-text-secondary mt-0.5">#{issue.number}</p>
                             </div>
                             <ArrowRight className="w-3.5 h-3.5 text-text-secondary mt-0.5 shrink-0" />
                           </button>
                         ))}
                       </div>
-                    )
-                  )}
+                    ))}
                 </div>
               )}
             </div>
@@ -820,11 +928,7 @@ export default function CopilotView() {
         onBack={() => setActiveTaskRun(null)}
         onTaskUpdate={(updates) => {
           setActiveTaskRun((prev) => (prev ? { ...prev, ...updates } : prev));
-          saveTasks(
-            tasks.map((t) =>
-              t.id === activeTaskRun.id ? { ...t, ...updates } : t
-            )
-          );
+          saveTasks(tasks.map((t) => (t.id === activeTaskRun.id ? { ...t, ...updates } : t)));
         }}
       />
     );
@@ -836,9 +940,11 @@ export default function CopilotView() {
         <div className="flex flex-col items-center justify-center h-full gap-6 text-text-secondary px-8">
           <Github className="w-16 h-16 opacity-70" />
           <div className="text-center space-y-2">
-            <h2 className="text-2xl font-light text-text-primary">Connect GitHub</h2>
+            <h2 className="text-2xl font-light text-text-primary">
+              {intl.formatMessage(i18n.connectGitHub)}
+            </h2>
             <p className="text-sm opacity-70 max-w-sm">
-              Sign in to manage repositories, create PRs, and review code with Goose.
+              {intl.formatMessage(i18n.signInDescription)}
             </p>
           </div>
 
@@ -854,7 +960,7 @@ export default function CopilotView() {
               <div className="flex flex-col items-center gap-3 w-full">
                 <div className="flex items-center gap-2 text-sm text-text-secondary">
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Waiting for GitHub authorization…
+                  {intl.formatMessage(i18n.waitingForAuthorization)}
                 </div>
                 <button
                   className="text-xs text-text-secondary underline"
@@ -864,7 +970,7 @@ export default function CopilotView() {
                     setLoadingAuth(false);
                   }}
                 >
-                  Cancel
+                  {intl.formatMessage(i18n.cancel)}
                 </button>
               </div>
             ) : (
@@ -878,7 +984,7 @@ export default function CopilotView() {
                 ) : (
                   <Github className="w-4 h-4" />
                 )}
-                Sign in with GitHub
+                {intl.formatMessage(i18n.signInWithGitHub)}
               </Button>
             )}
           </div>
@@ -946,9 +1052,11 @@ export default function CopilotView() {
           <div className="flex flex-col flex-1 min-h-0 px-6 py-5 gap-4">
             <div className="flex items-start justify-between">
               <div>
-                <h1 className="text-xl font-semibold text-text-primary">Overview</h1>
+                <h1 className="text-xl font-semibold text-text-primary">
+                  {intl.formatMessage(i18n.overviewTitle)}
+                </h1>
                 <p className="text-sm text-text-secondary mt-0.5">
-                  Your most recent and/or active tasks
+                  {intl.formatMessage(i18n.overviewDescription)}
                 </p>
               </div>
               <Button
@@ -957,7 +1065,7 @@ export default function CopilotView() {
                 className="flex items-center gap-1.5 text-xs"
                 onClick={() => setMainTab('integrations')}
               >
-                <Plus className="w-3.5 h-3.5" /> Add Integration
+                <Plus className="w-3.5 h-3.5" /> {intl.formatMessage(i18n.addIntegration)}
               </Button>
             </div>
 
@@ -967,11 +1075,10 @@ export default function CopilotView() {
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-amber-800 dark:text-amber-300">
-                    GitHub App not installed on any repository
+                    {intl.formatMessage(i18n.appNotInstalledTitle)}
                   </p>
                   <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
-                    Authorization alone isn't enough — you need to <strong>install</strong> your GitHub App on
-                    the repos you want Goose to access. This is what lets it create issues, push code, and open PRs.
+                    {intl.formatMessage(i18n.appNotInstalledBody)}
                   </p>
                   <div className="flex items-center gap-2 mt-2">
                     <Button
@@ -985,13 +1092,13 @@ export default function CopilotView() {
                         )
                       }
                     >
-                      Install GitHub App
+                      {intl.formatMessage(i18n.installGitHubApp)}
                     </Button>
                     <button
                       className="text-xs underline text-amber-700 dark:text-amber-400"
                       onClick={() => loadRepos(token!)}
                     >
-                      Re-check
+                      {intl.formatMessage(i18n.recheck)}
                     </button>
                   </div>
                 </div>
@@ -1017,8 +1124,8 @@ export default function CopilotView() {
                 }}
                 placeholder={
                   selectedRepo
-                    ? `What should Goose do in ${selectedRepo.name}? e.g. "Fix the login bug and open a PR", "Review PR #42", "Create a new auth module"`
-                    : 'Select a repository below, then describe a task for Goose…'
+                    ? intl.formatMessage(i18n.taskPlaceholderRepo, { repo: selectedRepo.name })
+                    : intl.formatMessage(i18n.taskPlaceholderNoRepo)
                 }
                 rows={3}
                 className="w-full text-sm bg-transparent resize-none focus:outline-none px-4 pt-4 pb-2 placeholder:text-text-secondary/50"
@@ -1131,10 +1238,10 @@ export default function CopilotView() {
                   <GitBranch className="w-10 h-10 opacity-30" />
                   <p className="text-sm">
                     {taskTab === 'active'
-                      ? 'No active tasks yet. Create one above!'
+                      ? intl.formatMessage(i18n.noActiveTasks)
                       : taskTab === 'archived'
-                        ? 'No archived tasks'
-                        : 'No suggestions available'}
+                        ? intl.formatMessage(i18n.noArchivedTasks)
+                        : intl.formatMessage(i18n.noSuggestions)}
                   </p>
                 </div>
               ) : (
@@ -1152,7 +1259,7 @@ export default function CopilotView() {
                         {isNewDay && (
                           <p className="text-[10px] uppercase tracking-widest text-text-secondary font-semibold pt-4 pb-2 px-1">
                             {isToday
-                              ? 'Today'
+                              ? intl.formatMessage(i18n.today)
                               : new Date(task.createdAt).toLocaleDateString(undefined, {
                                   month: 'short',
                                   day: 'numeric',
@@ -1199,7 +1306,7 @@ export default function CopilotView() {
                                   setTaskTab('active');
                                 }}
                               >
-                                Use This
+                                {intl.formatMessage(i18n.useThis)}
                               </Button>
                             ) : task.prUrl ? (
                               <Button
@@ -1209,7 +1316,7 @@ export default function CopilotView() {
                                 onClick={() => window.electron.openExternal(task.prUrl!)}
                               >
                                 <ArrowRight className="w-3 h-3" />
-                                View PR
+                                {intl.formatMessage(i18n.viewPR)}
                               </Button>
                             ) : task.status === 'in_progress' && selectedRepo ? (
                               <Button
@@ -1218,7 +1325,7 @@ export default function CopilotView() {
                                 className="text-xs h-7 px-2.5"
                                 onClick={() => setActiveTaskRun(task)}
                               >
-                                View Task
+                                {intl.formatMessage(i18n.viewTask)}
                               </Button>
                             ) : null}
                           </div>
@@ -1235,9 +1342,11 @@ export default function CopilotView() {
         {/* Integrations tab */}
         {mainTab === 'integrations' && (
           <div className="flex flex-col flex-1 min-h-0 px-6 py-5">
-            <h1 className="text-xl font-semibold text-text-primary mb-1">Integrations</h1>
+            <h1 className="text-xl font-semibold text-text-primary mb-1">
+              {intl.formatMessage(i18n.integrationsTitle)}
+            </h1>
             <p className="text-sm text-text-secondary mb-6">
-              Connect tools to enhance Goose's capabilities
+              {intl.formatMessage(i18n.integrationsDescription)}
             </p>
             <div className="border border-border rounded-xl p-4 flex items-center gap-4">
               <div className="w-10 h-10 rounded-lg bg-background-secondary flex items-center justify-center">
@@ -1245,15 +1354,17 @@ export default function CopilotView() {
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium">GitHub</p>
-                <p className="text-xs text-text-secondary">Connected as @{user?.login}</p>
+                <p className="text-xs text-text-secondary">
+                  {intl.formatMessage(i18n.connectedAs, { login: user?.login })}
+                </p>
               </div>
               <div className="flex items-center gap-1.5 text-xs text-green-600 font-medium">
-                <Check className="w-3.5 h-3.5" /> Connected
+                <Check className="w-3.5 h-3.5" /> {intl.formatMessage(i18n.connected)}
               </div>
             </div>
             <div className="mt-3 border border-dashed border-border rounded-xl p-6 flex flex-col items-center gap-2 text-text-secondary">
               <Puzzle className="w-8 h-8 opacity-40" />
-              <p className="text-sm">More integrations coming soon</p>
+              <p className="text-sm">{intl.formatMessage(i18n.moreIntegrationsSoon)}</p>
             </div>
           </div>
         )}
@@ -1262,9 +1373,11 @@ export default function CopilotView() {
         {mainTab === 'automation' && (
           <div className="flex flex-col flex-1 min-h-0 px-6 py-5 gap-4">
             <div>
-              <h1 className="text-xl font-semibold text-text-primary">Automation</h1>
+              <h1 className="text-xl font-semibold text-text-primary">
+                {intl.formatMessage(i18n.automationTitle)}
+              </h1>
               <p className="text-sm text-text-secondary mt-0.5">
-                Trigger Goose automatically on GitHub events
+                {intl.formatMessage(i18n.automationDescription)}
               </p>
             </div>
 
@@ -1275,14 +1388,15 @@ export default function CopilotView() {
                   <GitPullRequest className="w-5 h-5 text-text-secondary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-text-primary">Auto-review on PR open</p>
+                  <p className="text-sm font-medium text-text-primary">
+                    {intl.formatMessage(i18n.autoReviewTitle)}
+                  </p>
                   <p className="text-xs text-text-secondary mt-0.5">
-                    Goose posts a code review comment whenever a pull request is opened or updated
-                    in the selected repository.
+                    {intl.formatMessage(i18n.autoReviewDescription)}
                   </p>
                 </div>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 font-medium shrink-0">
-                  Coming soon
+                  {intl.formatMessage(i18n.comingSoon)}
                 </span>
               </div>
 
@@ -1291,13 +1405,15 @@ export default function CopilotView() {
                   <GitMerge className="w-5 h-5 text-text-secondary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-text-primary">Auto-merge on approval</p>
+                  <p className="text-sm font-medium text-text-primary">
+                    {intl.formatMessage(i18n.autoMergeTitle)}
+                  </p>
                   <p className="text-xs text-text-secondary mt-0.5">
-                    Automatically merge PRs once Goose's review passes and all checks are green.
+                    {intl.formatMessage(i18n.autoMergeDescription)}
                   </p>
                 </div>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 font-medium shrink-0">
-                  Coming soon
+                  {intl.formatMessage(i18n.comingSoon)}
                 </span>
               </div>
 
@@ -1306,13 +1422,15 @@ export default function CopilotView() {
                   <Eye className="w-5 h-5 text-text-secondary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-text-primary">Issue triage</p>
+                  <p className="text-sm font-medium text-text-primary">
+                    {intl.formatMessage(i18n.issueTriageTitle)}
+                  </p>
                   <p className="text-xs text-text-secondary mt-0.5">
-                    Goose labels and responds to new issues with an initial triage summary.
+                    {intl.formatMessage(i18n.issueTriageDescription)}
                   </p>
                 </div>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 font-medium shrink-0">
-                  Coming soon
+                  {intl.formatMessage(i18n.comingSoon)}
                 </span>
               </div>
             </div>
@@ -1321,21 +1439,18 @@ export default function CopilotView() {
             <div className="border border-dashed border-border rounded-xl p-5 flex flex-col gap-2">
               <p className="text-sm font-medium text-text-primary flex items-center gap-2">
                 <Settings className="w-4 h-4 text-text-secondary" />
-                How to enable automations
+                {intl.formatMessage(i18n.howToEnableTitle)}
               </p>
               <ol className="text-xs text-text-secondary space-y-1 list-decimal list-inside">
-                <li>
-                  Go to your GitHub App settings and add a webhook URL pointing to your Goose
-                  server.
-                </li>
-                <li>Select the events you want to trigger (Pull requests, Issues, etc.).</li>
-                <li>Goose will listen and respond automatically whenever those events fire.</li>
+                <li>{intl.formatMessage(i18n.howToEnableStep1)}</li>
+                <li>{intl.formatMessage(i18n.howToEnableStep2)}</li>
+                <li>{intl.formatMessage(i18n.howToEnableStep3)}</li>
               </ol>
               <button
                 onClick={() => window.electron.openExternal('https://github.com/settings/apps')}
                 className="mt-1 text-xs text-blue-500 hover:underline self-start"
               >
-                Open GitHub App settings →
+                {intl.formatMessage(i18n.openGitHubAppSettings)}
               </button>
             </div>
           </div>
@@ -1345,9 +1460,11 @@ export default function CopilotView() {
         {mainTab === 'insights' && (
           <div className="flex flex-col flex-1 min-h-0 px-6 py-5 gap-5">
             <div>
-              <h1 className="text-xl font-semibold text-text-primary">Insights</h1>
+              <h1 className="text-xl font-semibold text-text-primary">
+                {intl.formatMessage(i18n.insightsTitle)}
+              </h1>
               <p className="text-sm text-text-secondary mt-0.5">
-                Activity and metrics across your repositories
+                {intl.formatMessage(i18n.insightsDescription)}
               </p>
             </div>
 
@@ -1355,14 +1472,14 @@ export default function CopilotView() {
             <div className="grid grid-cols-3 gap-3">
               <div className="border border-border rounded-xl p-4 flex flex-col gap-1">
                 <p className="text-[10px] uppercase tracking-widest text-text-secondary font-semibold">
-                  Tasks created
+                  {intl.formatMessage(i18n.tasksCreated)}
                 </p>
                 <p className="text-3xl font-semibold text-text-primary">{tasks.length}</p>
-                <p className="text-xs text-text-secondary">all time</p>
+                <p className="text-xs text-text-secondary">{intl.formatMessage(i18n.allTime)}</p>
               </div>
               <div className="border border-border rounded-xl p-4 flex flex-col gap-1">
                 <p className="text-[10px] uppercase tracking-widest text-text-secondary font-semibold">
-                  Active
+                  {intl.formatMessage(i18n.activeLabel)}
                 </p>
                 <p className="text-3xl font-semibold text-green-600">
                   {
@@ -1372,23 +1489,29 @@ export default function CopilotView() {
                     ).length
                   }
                 </p>
-                <p className="text-xs text-text-secondary">in progress or open</p>
+                <p className="text-xs text-text-secondary">
+                  {intl.formatMessage(i18n.inProgressOrOpen)}
+                </p>
               </div>
               <div className="border border-border rounded-xl p-4 flex flex-col gap-1">
                 <p className="text-[10px] uppercase tracking-widest text-text-secondary font-semibold">
-                  Completed
+                  {intl.formatMessage(i18n.completedLabel)}
                 </p>
                 <p className="text-3xl font-semibold text-purple-600">
                   {tasks.filter((t) => t.status === 'merged').length}
                 </p>
-                <p className="text-xs text-text-secondary">merged</p>
+                <p className="text-xs text-text-secondary">
+                  {intl.formatMessage(i18n.mergedLabel)}
+                </p>
               </div>
             </div>
 
             {/* Repos worked on */}
             <div className="border border-border rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-border">
-                <p className="text-sm font-medium text-text-primary">Repositories worked on</p>
+                <p className="text-sm font-medium text-text-primary">
+                  {intl.formatMessage(i18n.repositoriesWorkedOn)}
+                </p>
               </div>
               {(() => {
                 const repoCounts = tasks.reduce<Record<string, { count: number; repoUrl: string }>>(
@@ -1402,7 +1525,7 @@ export default function CopilotView() {
                 if (sorted.length === 0) {
                   return (
                     <div className="px-4 py-8 text-center text-xs text-text-secondary">
-                      No tasks yet — create one from the dashboard.
+                      {intl.formatMessage(i18n.noTasksYet)}
                     </div>
                   );
                 }
@@ -1419,7 +1542,7 @@ export default function CopilotView() {
                       {repo}
                     </button>
                     <span className="text-xs text-text-secondary shrink-0">
-                      {count} task{count !== 1 ? 's' : ''}
+                      {intl.formatMessage(i18n.taskCount, { count })}
                     </span>
                   </div>
                 ));
@@ -1430,7 +1553,9 @@ export default function CopilotView() {
             {tasks.length > 0 && (
               <div className="border border-border rounded-xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-border">
-                  <p className="text-sm font-medium text-text-primary">Status breakdown</p>
+                  <p className="text-sm font-medium text-text-primary">
+                    {intl.formatMessage(i18n.statusBreakdown)}
+                  </p>
                 </div>
                 <div className="p-4 space-y-3">
                   {(
@@ -1469,7 +1594,9 @@ export default function CopilotView() {
               <div className="border border-border rounded-xl p-4 flex items-center gap-3">
                 <Github className="w-4 h-4 text-text-secondary shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-text-secondary">Active repository</p>
+                  <p className="text-xs text-text-secondary">
+                    {intl.formatMessage(i18n.activeRepository)}
+                  </p>
                   <button
                     onClick={() => window.electron.openExternal(selectedRepo.html_url)}
                     className="text-sm font-medium text-text-primary hover:underline truncate block"
@@ -1491,8 +1618,12 @@ export default function CopilotView() {
           <ScrollArea className="flex-1">
             <div className="flex flex-col px-6 py-5 gap-6 max-w-2xl">
               <div>
-                <h1 className="text-xl font-semibold text-text-primary mb-1">Settings</h1>
-                <p className="text-sm text-text-secondary">Manage your Copilot preferences</p>
+                <h1 className="text-xl font-semibold text-text-primary mb-1">
+                  {intl.formatMessage(i18n.settingsTitle)}
+                </h1>
+                <p className="text-sm text-text-secondary">
+                  {intl.formatMessage(i18n.settingsDescription)}
+                </p>
               </div>
 
               {/* ── GitHub Account ─────────────────────────────────────── */}
@@ -1501,7 +1632,9 @@ export default function CopilotView() {
                   <div className="flex items-center gap-3">
                     <Github className="w-5 h-5 text-text-secondary" />
                     <div>
-                      <p className="text-sm font-medium">GitHub Account</p>
+                      <p className="text-sm font-medium">
+                        {intl.formatMessage(i18n.githubAccount)}
+                      </p>
                       <p className="text-xs text-text-secondary">@{user?.login}</p>
                     </div>
                   </div>
@@ -1511,15 +1644,17 @@ export default function CopilotView() {
                     onClick={signOut}
                     className="flex items-center gap-1.5 text-xs text-red-500 border-red-200 hover:bg-red-50"
                   >
-                    <LogOut className="w-3.5 h-3.5" /> Sign out
+                    <LogOut className="w-3.5 h-3.5" /> {intl.formatMessage(i18n.signOut)}
                   </Button>
                 </div>
                 <div className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <RefreshCw className="w-5 h-5 text-text-secondary" />
                     <div>
-                      <p className="text-sm font-medium">Repositories</p>
-                      <p className="text-xs text-text-secondary">{repos.length} repos loaded</p>
+                      <p className="text-sm font-medium">{intl.formatMessage(i18n.repositories)}</p>
+                      <p className="text-xs text-text-secondary">
+                        {intl.formatMessage(i18n.reposLoaded, { count: repos.length })}
+                      </p>
                     </div>
                   </div>
                   <Button
@@ -1530,7 +1665,7 @@ export default function CopilotView() {
                     className="flex items-center gap-1.5 text-xs"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${loadingRepos ? 'animate-spin' : ''}`} />
-                    Refresh
+                    {intl.formatMessage(i18n.refresh)}
                   </Button>
                 </div>
               </div>
@@ -1541,33 +1676,60 @@ export default function CopilotView() {
                   <div>
                     <p className="text-sm font-semibold text-text-primary flex items-center gap-2">
                       <Puzzle className="w-4 h-4" />
-                      GitHub App — Bot Identity
+                      {intl.formatMessage(i18n.botIdentityTitle)}
                     </p>
                     <p className="text-xs text-text-secondary mt-0.5">
-                      Actions appear as <code className="bg-background-primary px-1 rounded">{appSlug ?? 'your-app'}[bot]</code> — like Cursor, Tembo, and Claude Code Review
+                      {intl.formatMessage(i18n.botIdentityDescription, {
+                        appSlug: (
+                          <code className="bg-background-primary px-1 rounded">
+                            {appSlug ?? 'your-app'}
+                          </code>
+                        ),
+                      })}
                     </p>
                   </div>
-                  {botMode
-                    ? <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-medium"><Check className="w-3 h-3" /> Active</span>
-                    : <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">Not configured</span>
-                  }
+                  {botMode ? (
+                    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-medium">
+                      <Check className="w-3 h-3" /> {intl.formatMessage(i18n.botActive)}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
+                      {intl.formatMessage(i18n.botNotConfigured)}
+                    </span>
+                  )}
                 </div>
 
                 <div className="p-4">
                   {botMode && botAppId ? (
                     <div className="space-y-1">
-                      <p className="text-sm text-text-primary">App ID: <code className="text-text-secondary">{botAppId}</code></p>
+                      <p className="text-sm text-text-primary">
+                        {intl.formatMessage(i18n.botAppId, {
+                          appId: <code className="text-text-secondary">{botAppId}</code>,
+                        })}
+                      </p>
                       <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
                         <Check className="w-3 h-3" />
-                        All actions show as <strong>{appSlug ?? 'goose-copilot'}[bot]</strong>
+                        {intl.formatMessage(i18n.botActionsShowAs, {
+                          appSlug: <strong>{appSlug ?? 'goose-copilot'}[bot]</strong>,
+                        })}
                       </p>
                     </div>
                   ) : (
                     <p className="text-xs text-text-secondary">
-                      Set <code className="bg-background-secondary px-1 rounded">GITHUB_APP_ID</code> and{' '}
-                      <code className="bg-background-secondary px-1 rounded">GITHUB_APP_PRIVATE_KEY_PATH</code> in your{' '}
-                      <code className="bg-background-secondary px-1 rounded">.env</code> file to enable bot identity.
-                      Actions currently show as <strong>@{user?.login}</strong>.
+                      {intl.formatMessage(i18n.botSetupHint, {
+                        appId: (
+                          <code className="bg-background-secondary px-1 rounded">
+                            GITHUB_APP_ID
+                          </code>
+                        ),
+                        keyPath: (
+                          <code className="bg-background-secondary px-1 rounded">
+                            GITHUB_APP_PRIVATE_KEY_PATH
+                          </code>
+                        ),
+                        envFile: <code className="bg-background-secondary px-1 rounded">.env</code>,
+                        login: <strong>@{user?.login}</strong>,
+                      })}
                     </p>
                   )}
                 </div>

@@ -1478,7 +1478,6 @@ ipcMain.handle('get-github-installation-token', async (_event, owner: string) =>
       expiresAt: new Date(tokenData.expires_at).getTime(),
     });
 
-
     return { token: tokenData.token, expiresAt: tokenData.expires_at };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Failed to get installation token' };
