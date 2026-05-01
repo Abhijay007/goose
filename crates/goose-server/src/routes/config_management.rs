@@ -52,10 +52,7 @@ pub struct GithubPollRequest {
 
 fn github_headers() -> reqwest::header::HeaderMap {
     let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(
-        reqwest::header::ACCEPT,
-        "application/json".parse().unwrap(),
-    );
+    headers.insert(reqwest::header::ACCEPT, "application/json".parse().unwrap());
     headers.insert(
         reqwest::header::CONTENT_TYPE,
         "application/json".parse().unwrap(),
