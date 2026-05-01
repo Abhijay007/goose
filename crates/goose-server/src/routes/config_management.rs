@@ -53,11 +53,26 @@ pub struct GithubPollRequest {
 fn github_headers() -> reqwest::header::HeaderMap {
     use reqwest::header::{HeaderName, HeaderValue};
     let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::ACCEPT, HeaderValue::from_static("application/json"));
-    headers.insert(reqwest::header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static("GithubCopilot/1.155.0"));
-    headers.insert(HeaderName::from_static("editor-version"), HeaderValue::from_static("vscode/1.85.1"));
-    headers.insert(HeaderName::from_static("editor-plugin-version"), HeaderValue::from_static("copilot/1.155.0"));
+    headers.insert(
+        reqwest::header::ACCEPT,
+        HeaderValue::from_static("application/json"),
+    );
+    headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    headers.insert(
+        reqwest::header::USER_AGENT,
+        HeaderValue::from_static("GithubCopilot/1.155.0"),
+    );
+    headers.insert(
+        HeaderName::from_static("editor-version"),
+        HeaderValue::from_static("vscode/1.85.1"),
+    );
+    headers.insert(
+        HeaderName::from_static("editor-plugin-version"),
+        HeaderValue::from_static("copilot/1.155.0"),
+    );
     headers
 }
 
