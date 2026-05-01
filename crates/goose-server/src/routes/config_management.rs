@@ -1016,7 +1016,7 @@ pub async fn github_copilot_poll_token(
 
             tracing::debug!(
                 "GitHub Copilot OAuth complete, copilot token: {}…",
-                &copilot_token_resp.token[..8]
+                &copilot_token_resp.token.chars().take(8).collect::<String>()
             );
             return Ok(Json("Authentication completed".to_string()));
         }
