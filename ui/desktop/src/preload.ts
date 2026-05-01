@@ -1,4 +1,9 @@
 import Electron, { contextBridge, ipcRenderer, webUtils } from 'electron';
+
+const githubAuthListeners = new WeakMap<
+  (url: string) => void,
+  (event: Electron.IpcRendererEvent, url: string) => void
+>();
 import { Recipe } from './recipe';
 import { GooseApp } from './api';
 import type { Settings, SettingKey } from './utils/settings';
@@ -175,6 +180,16 @@ type ElectronAPI = {
   onUpdaterEvent: (callback: (event: UpdaterEvent) => void) => void;
   getUpdateState: () => Promise<{ updateAvailable: boolean; latestVersion?: string } | null>;
   isUsingGitHubFallback: () => Promise<boolean>;
+  onGitHubAuthCallback: (callback: (url: string) => void) => void;
+  offGitHubAuthCallback: (callback: (url: string) => void) => void;
+  startGitHubAppInstall: () => Promise<{ ok: true; slug: string } | { error: string }>;
+  getGitHubInstallationAccount: (
+    installationId: number
+  ) => Promise<{ login: string; avatar_url: string; html_url: string } | { error: string }>;
+  getGitHubAppConfig: () => Promise<{ appId: string } | null>;
+  getGitHubInstallationToken: (
+    owner: string
+  ) => Promise<{ token: string; expiresAt: string } | { error: string }>;
   // Recipe warning functions
   closeWindow: () => void;
   hasAcceptedRecipeBefore: (recipe: Recipe) => Promise<boolean>;
@@ -338,6 +353,28 @@ const electronAPI: ElectronAPI = {
   refreshApp: (app: GooseApp) => ipcRenderer.invoke('refresh-app', app),
   closeApp: (appName: string) => ipcRenderer.invoke('close-app', appName),
   addRecentDir: (dir: string) => ipcRenderer.invoke('add-recent-dir', dir),
+  onGitHubAuthCallback: (callback: (url: string) => void) => {
+    const existing = githubAuthListeners.get(callback);
+    if (existing) {
+      ipcRenderer.removeListener('github-auth-callback', existing);
+    }
+    const wrapped = (_event: Electron.IpcRendererEvent, url: string) => callback(url);
+    githubAuthListeners.set(callback, wrapped);
+    ipcRenderer.on('github-auth-callback', wrapped);
+  },
+  offGitHubAuthCallback: (callback: (url: string) => void) => {
+    const wrapped = githubAuthListeners.get(callback);
+    if (wrapped) {
+      ipcRenderer.removeListener('github-auth-callback', wrapped);
+      githubAuthListeners.delete(callback);
+    }
+  },
+  startGitHubAppInstall: () => ipcRenderer.invoke('start-github-app-install'),
+  getGitHubInstallationAccount: (installationId: number) =>
+    ipcRenderer.invoke('get-github-installation-account', installationId),
+  getGitHubAppConfig: () => ipcRenderer.invoke('get-github-app-config'),
+  getGitHubInstallationToken: (owner: string) =>
+    ipcRenderer.invoke('get-github-installation-token', owner),
 };
 
 const appConfigAPI: AppConfigAPI = {

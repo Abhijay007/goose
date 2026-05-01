@@ -18,7 +18,8 @@ export type View =
   | 'loading'
   | 'recipes'
   | 'skills'
-  | 'permission';
+  | 'permission'
+  | 'copilot';
 
 export type ViewOptions = {
   showEnvVars?: boolean;
@@ -82,6 +83,9 @@ export const createNavigationHandler = (navigate: NavigateFunction) => {
 
       case 'extensions':
         navigate('/extensions', { state: options });
+        break;
+      case 'copilot':
+        navigate('/copilot', { state: options });
         break;
       default:
         navigate('/', { state: options });

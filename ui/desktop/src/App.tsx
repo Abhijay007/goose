@@ -46,6 +46,7 @@ import ExtensionsView, { ExtensionsViewOptions } from './components/extensions/E
 import RecipesView from './components/recipes/RecipesView';
 import SkillsView from './components/skills/SkillsView';
 import AppsView from './components/apps/AppsView';
+import CopilotView from './components/copilot/CopilotView';
 import StandaloneAppView from './components/apps/StandaloneAppView';
 import { View, ViewOptions } from './utils/navigationUtils';
 
@@ -682,6 +683,7 @@ export function AppInner() {
               <Route path="schedules" element={<SchedulesRoute />} />
               <Route path="recipes" element={<RecipesRoute />} />
               <Route path="skills" element={<SkillsRoute />} />
+              <Route path="copilot" element={<CopilotView />} />
               <Route
                 path="shared-session"
                 element={

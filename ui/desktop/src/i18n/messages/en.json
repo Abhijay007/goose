@@ -284,6 +284,264 @@
   "conversationLimitsDropdown.maxTurnsDescription": {
     "defaultMessage": "Maximum agent turns before Goose asks for user input"
   },
+  "copilotView.activeLabel": {
+    "defaultMessage": "Active"
+  },
+  "copilotView.activeRepository": {
+    "defaultMessage": "Active repository"
+  },
+  "copilotView.addIntegration": {
+    "defaultMessage": "Add Integration"
+  },
+  "copilotView.afterInstallingNote": {
+    "defaultMessage": "After installing, come back and try again. No need to sign out."
+  },
+  "copilotView.allTime": {
+    "defaultMessage": "all time"
+  },
+  "copilotView.appNotInstalledBody": {
+    "defaultMessage": "Authorization alone isn’t enough — you need to install your GitHub App on the repos you want Goose to access. This is what lets it create issues, push code, and open PRs."
+  },
+  "copilotView.appNotInstalledHint": {
+    "defaultMessage": "Your GitHub App is not installed on this repository. You need to install it (not just authorize it) before it can create issues or PRs."
+  },
+  "copilotView.appNotInstalledTitle": {
+    "defaultMessage": "GitHub App not installed on any repository"
+  },
+  "copilotView.autoMergeDescription": {
+    "defaultMessage": "Automatically merge PRs once Goose’s review passes and all checks are green."
+  },
+  "copilotView.autoMergeTitle": {
+    "defaultMessage": "Auto-merge on approval"
+  },
+  "copilotView.autoReviewDescription": {
+    "defaultMessage": "Goose posts a code review comment whenever a pull request is opened or updated in the selected repository."
+  },
+  "copilotView.autoReviewTitle": {
+    "defaultMessage": "Auto-review on PR open"
+  },
+  "copilotView.automationDescription": {
+    "defaultMessage": "Trigger Goose automatically on GitHub events"
+  },
+  "copilotView.automationTitle": {
+    "defaultMessage": "Automation"
+  },
+  "copilotView.botActionsShowAs": {
+    "defaultMessage": "All actions show as {appSlug}[bot]"
+  },
+  "copilotView.botActive": {
+    "defaultMessage": "Active"
+  },
+  "copilotView.botAppId": {
+    "defaultMessage": "App ID: {appId}"
+  },
+  "copilotView.botIdentityDescription": {
+    "defaultMessage": "Actions appear as {appSlug}[bot] — like Cursor, Tembo, and Claude Code Review"
+  },
+  "copilotView.botIdentityTitle": {
+    "defaultMessage": "GitHub App — Bot Identity"
+  },
+  "copilotView.botNotConfigured": {
+    "defaultMessage": "Not configured"
+  },
+  "copilotView.botSetupHint": {
+    "defaultMessage": "Set {appId} and {keyPath} in your {envFile} file to enable bot identity. Actions currently show as @{login}."
+  },
+  "copilotView.cancel": {
+    "defaultMessage": "Cancel"
+  },
+  "copilotView.clearSelection": {
+    "defaultMessage": "Clear selection"
+  },
+  "copilotView.comingSoon": {
+    "defaultMessage": "Coming soon"
+  },
+  "copilotView.completedLabel": {
+    "defaultMessage": "Completed"
+  },
+  "copilotView.connectGitHub": {
+    "defaultMessage": "Connect GitHub"
+  },
+  "copilotView.connected": {
+    "defaultMessage": "Connected"
+  },
+  "copilotView.connectedAs": {
+    "defaultMessage": "Connected as @{login}"
+  },
+  "copilotView.creatingIssue": {
+    "defaultMessage": "Creating issue…"
+  },
+  "copilotView.githubAccount": {
+    "defaultMessage": "GitHub Account"
+  },
+  "copilotView.howToEnableStep1": {
+    "defaultMessage": "Go to your GitHub App settings and add a webhook URL pointing to your Goose server."
+  },
+  "copilotView.howToEnableStep2": {
+    "defaultMessage": "Select the events you want to trigger (Pull requests, Issues, etc.)."
+  },
+  "copilotView.howToEnableStep3": {
+    "defaultMessage": "Goose will listen and respond automatically whenever those events fire."
+  },
+  "copilotView.howToEnableTitle": {
+    "defaultMessage": "How to enable automations"
+  },
+  "copilotView.inProgressOrOpen": {
+    "defaultMessage": "in progress or open"
+  },
+  "copilotView.insightsDescription": {
+    "defaultMessage": "Activity and metrics across your repositories"
+  },
+  "copilotView.insightsTitle": {
+    "defaultMessage": "Insights"
+  },
+  "copilotView.installGitHubApp": {
+    "defaultMessage": "Install GitHub App"
+  },
+  "copilotView.installGitHubAppArrow": {
+    "defaultMessage": "Install GitHub App →"
+  },
+  "copilotView.integrationsDescription": {
+    "defaultMessage": "Connect tools to enhance Goose’s capabilities"
+  },
+  "copilotView.integrationsTitle": {
+    "defaultMessage": "Integrations"
+  },
+  "copilotView.issueCreated": {
+    "defaultMessage": "Issue created!"
+  },
+  "copilotView.issueTriageDescription": {
+    "defaultMessage": "Goose labels and responds to new issues with an initial triage summary."
+  },
+  "copilotView.issueTriageTitle": {
+    "defaultMessage": "Issue triage"
+  },
+  "copilotView.loadingIssues": {
+    "defaultMessage": "Loading issues…"
+  },
+  "copilotView.loadingRepos": {
+    "defaultMessage": "Loading repos…"
+  },
+  "copilotView.mergedLabel": {
+    "defaultMessage": "merged"
+  },
+  "copilotView.moreIntegrationsSoon": {
+    "defaultMessage": "More integrations coming soon"
+  },
+  "copilotView.noActiveTasks": {
+    "defaultMessage": "No active tasks yet. Create one above!"
+  },
+  "copilotView.noArchivedTasks": {
+    "defaultMessage": "No archived tasks"
+  },
+  "copilotView.noOpenIssues": {
+    "defaultMessage": "No open issues."
+  },
+  "copilotView.noReposFound": {
+    "defaultMessage": "No repos found"
+  },
+  "copilotView.noSuggestions": {
+    "defaultMessage": "No suggestions available"
+  },
+  "copilotView.noTasksYet": {
+    "defaultMessage": "No tasks yet — create one from the dashboard."
+  },
+  "copilotView.openGitHubAppSettings": {
+    "defaultMessage": "Open GitHub App settings →"
+  },
+  "copilotView.openIssuesIn": {
+    "defaultMessage": "Open issues in"
+  },
+  "copilotView.overviewDescription": {
+    "defaultMessage": "Your most recent and/or active tasks"
+  },
+  "copilotView.overviewTitle": {
+    "defaultMessage": "Overview"
+  },
+  "copilotView.recheck": {
+    "defaultMessage": "Re-check"
+  },
+  "copilotView.refresh": {
+    "defaultMessage": "Refresh"
+  },
+  "copilotView.reposLoaded": {
+    "defaultMessage": "{count} repos loaded"
+  },
+  "copilotView.repositories": {
+    "defaultMessage": "Repositories"
+  },
+  "copilotView.repositoriesWorkedOn": {
+    "defaultMessage": "Repositories worked on"
+  },
+  "copilotView.searchRepositoriesPlaceholder": {
+    "defaultMessage": "Search repositories…"
+  },
+  "copilotView.selectRepositories": {
+    "defaultMessage": "Select repositories"
+  },
+  "copilotView.settingsDescription": {
+    "defaultMessage": "Manage your Copilot preferences"
+  },
+  "copilotView.settingsTitle": {
+    "defaultMessage": "Settings"
+  },
+  "copilotView.signInDescription": {
+    "defaultMessage": "Sign in to manage repositories, create PRs, and review code with Goose."
+  },
+  "copilotView.signInWithGitHub": {
+    "defaultMessage": "Sign in with GitHub"
+  },
+  "copilotView.signOut": {
+    "defaultMessage": "Sign out"
+  },
+  "copilotView.statusBreakdown": {
+    "defaultMessage": "Status breakdown"
+  },
+  "copilotView.statusClosed": {
+    "defaultMessage": "Closed"
+  },
+  "copilotView.statusInProgress": {
+    "defaultMessage": "In Progress"
+  },
+  "copilotView.statusInReview": {
+    "defaultMessage": "In Review"
+  },
+  "copilotView.statusMerged": {
+    "defaultMessage": "Merged"
+  },
+  "copilotView.statusOpen": {
+    "defaultMessage": "Open"
+  },
+  "copilotView.taskCount": {
+    "defaultMessage": "{count,plural,one{# task} other{# tasks}}"
+  },
+  "copilotView.taskPlaceholderNoRepo": {
+    "defaultMessage": "Select a repository below, then describe a task for Goose…"
+  },
+  "copilotView.taskPlaceholderRepo": {
+    "defaultMessage": "What should Goose do in {repo}? e.g. \"Fix the login bug and open a PR\", \"Review PR #42\", \"Create a new auth module\""
+  },
+  "copilotView.tasksCreated": {
+    "defaultMessage": "Tasks created"
+  },
+  "copilotView.today": {
+    "defaultMessage": "Today"
+  },
+  "copilotView.useThis": {
+    "defaultMessage": "Use This"
+  },
+  "copilotView.viewOnGitHub": {
+    "defaultMessage": "View on GitHub"
+  },
+  "copilotView.viewPR": {
+    "defaultMessage": "View PR"
+  },
+  "copilotView.viewTask": {
+    "defaultMessage": "View Task"
+  },
+  "copilotView.waitingForAuthorization": {
+    "defaultMessage": "Waiting for GitHub authorization…"
+  },
   "costTracker.costUnavailable": {
     "defaultMessage": "Cost data not available for {model} ({inputTokens} input, {outputTokens} output tokens)"
   },
@@ -2351,6 +2609,9 @@
   "navigationCustomization.itemChat": {
     "defaultMessage": "Chat"
   },
+  "navigationCustomization.itemCopilot": {
+    "defaultMessage": "Copilot"
+  },
   "navigationCustomization.itemExtensions": {
     "defaultMessage": "Extensions"
   },
@@ -4408,6 +4669,45 @@
   },
   "switchModelModal.useOtherProvider": {
     "defaultMessage": "Use other provider"
+  },
+  "taskRunView.agentError": {
+    "defaultMessage": "Agent encountered an error"
+  },
+  "taskRunView.continuing": {
+    "defaultMessage": "Continuing…"
+  },
+  "taskRunView.goBack": {
+    "defaultMessage": "Go back"
+  },
+  "taskRunView.openGooseSettings": {
+    "defaultMessage": "Open Goose Settings"
+  },
+  "taskRunView.openRepository": {
+    "defaultMessage": "Open Repository"
+  },
+  "taskRunView.pullRequestCreated": {
+    "defaultMessage": "Pull request created"
+  },
+  "taskRunView.startingAgent": {
+    "defaultMessage": "Starting Goose agent…"
+  },
+  "taskRunView.statusDone": {
+    "defaultMessage": "Done"
+  },
+  "taskRunView.statusFailed": {
+    "defaultMessage": "Failed"
+  },
+  "taskRunView.statusStarting": {
+    "defaultMessage": "Starting…"
+  },
+  "taskRunView.statusWorking": {
+    "defaultMessage": "Working…"
+  },
+  "taskRunView.taskComplete": {
+    "defaultMessage": "Task complete"
+  },
+  "taskRunView.viewOnGitHub": {
+    "defaultMessage": "View on GitHub"
   },
   "telemetryConsentPrompt.description": {
     "defaultMessage": "Would you like to share anonymous usage data to help improve goose? We never collect your conversations, code, or personal data."
