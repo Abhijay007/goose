@@ -51,18 +51,13 @@ pub struct GithubPollRequest {
 }
 
 fn github_headers() -> reqwest::header::HeaderMap {
+    use reqwest::header::{HeaderName, HeaderValue};
     let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::ACCEPT, "application/json".parse().unwrap());
-    headers.insert(
-        reqwest::header::CONTENT_TYPE,
-        "application/json".parse().unwrap(),
-    );
-    headers.insert(
-        reqwest::header::USER_AGENT,
-        "GithubCopilot/1.155.0".parse().unwrap(),
-    );
-    headers.insert("editor-version", "vscode/1.85.1".parse().unwrap());
-    headers.insert("editor-plugin-version", "copilot/1.155.0".parse().unwrap());
+    headers.insert(reqwest::header::ACCEPT, HeaderValue::from_static("application/json"));
+    headers.insert(reqwest::header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static("GithubCopilot/1.155.0"));
+    headers.insert(HeaderName::from_static("editor-version"), HeaderValue::from_static("vscode/1.85.1"));
+    headers.insert(HeaderName::from_static("editor-plugin-version"), HeaderValue::from_static("copilot/1.155.0"));
     headers
 }
 
@@ -951,11 +946,6 @@ pub async fn github_copilot_poll_token(
         access_token: Option<String>,
         error: Option<String>,
     }
-    #[derive(Deserialize)]
-    struct CopilotTokenInfo {
-        token: String,
-    }
-
     let client = reqwest::Client::new();
     let max_attempts = 36;
 
@@ -980,7 +970,7 @@ pub async fn github_copilot_poll_token(
             })?;
 
         if let Some(access_token) = resp.access_token {
-            let copilot_token_resp = client
+            client
                 .get(GITHUB_COPILOT_API_KEY_URL)
                 .headers(github_headers())
                 .header(
@@ -995,11 +985,6 @@ pub async fn github_copilot_poll_token(
                 .error_for_status()
                 .map_err(|e| {
                     ErrorResponse::bad_request(format!("Copilot token fetch error: {}", e))
-                })?
-                .json::<CopilotTokenInfo>()
-                .await
-                .map_err(|e| {
-                    ErrorResponse::bad_request(format!("Failed to parse Copilot token: {}", e))
                 })?;
 
             let config = Config::global();
@@ -1014,10 +999,7 @@ pub async fn github_copilot_poll_token(
                     ErrorResponse::bad_request(format!("Failed to mark provider configured: {}", e))
                 })?;
 
-            tracing::debug!(
-                "GitHub Copilot OAuth complete, copilot token: {}…",
-                &copilot_token_resp.token.chars().take(8).collect::<String>()
-            );
+            tracing::debug!("GitHub Copilot OAuth complete");
             return Ok(Json("Authentication completed".to_string()));
         }
 

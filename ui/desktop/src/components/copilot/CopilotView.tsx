@@ -539,6 +539,7 @@ export default function CopilotView() {
   const [selectedBranch, setSelectedBranch] = useState('main');
   const [branches, setBranches] = useState<string[]>(['main']);
   const [showModelModal, setShowModelModal] = useState(false);
+  const pendingAuthCallbackRef = useRef<((url: string) => void) | null>(null);
   const setView = useNavigation();
 
   const saveTasks = useCallback((t: Task[]) => {
@@ -641,6 +642,7 @@ export default function CopilotView() {
 
     // GitHub redirects to goose://github-auth?installation_id=XXX&setup_action=install
     const handleCallback = async (url: string) => {
+      pendingAuthCallbackRef.current = null;
       window.electron.offGitHubAuthCallback(handleCallback);
       setWaitingForBrowser(false);
       try {
@@ -674,6 +676,7 @@ export default function CopilotView() {
       }
     };
 
+    pendingAuthCallbackRef.current = handleCallback;
     window.electron.onGitHubAuthCallback(handleCallback);
   }, [loadRepos]);
 
@@ -965,7 +968,10 @@ export default function CopilotView() {
                 <button
                   className="text-xs text-text-secondary underline"
                   onClick={() => {
-                    window.electron.offGitHubAuthCallback(() => {});
+                    if (pendingAuthCallbackRef.current) {
+                      window.electron.offGitHubAuthCallback(pendingAuthCallbackRef.current);
+                      pendingAuthCallbackRef.current = null;
+                    }
                     setWaitingForBrowser(false);
                     setLoadingAuth(false);
                   }}

@@ -1384,6 +1384,10 @@ function generateGitHubAppJWT(appId: string, privateKey: string): string {
 }
 
 async function loadAppPrivateKey(): Promise<string | null> {
+  log.info('[GitHub App] GITHUB_APP_ID:', process.env.GITHUB_APP_ID);
+  log.info('[GitHub App] GITHUB_APP_PRIVATE_KEY_PATH:', process.env.GITHUB_APP_PRIVATE_KEY_PATH);
+  log.info('[GitHub App] process.cwd():', process.cwd());
+  log.info('[GitHub App] app.getAppPath():', app.getAppPath());
   const inline = process.env.GITHUB_APP_PRIVATE_KEY;
   if (inline?.trim()) return inline.replace(/\\n/g, '\n');
   const keyPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH?.trim();
@@ -1392,10 +1396,13 @@ async function loadAppPrivateKey(): Promise<string | null> {
       const resolved = path.isAbsolute(keyPath)
         ? keyPath
         : path.resolve(app.getAppPath(), '..', keyPath);
+      log.info('[GitHub App] Trying to read key from:', resolved);
       return await fs.readFile(resolved, 'utf-8');
     } catch {
       try {
-        return await fs.readFile(path.resolve(process.cwd(), keyPath), 'utf-8');
+        const fallback = path.resolve(process.cwd(), keyPath);
+        log.info('[GitHub App] Fallback path:', fallback);
+        return await fs.readFile(fallback, 'utf-8');
       } catch {
         log.error('[GitHub App] Could not read private key from', keyPath);
       }
@@ -1408,7 +1415,9 @@ const installationTokenCache = new Map<string, { token: string; expiresAt: numbe
 
 ipcMain.handle('get-github-app-config', async () => {
   const appId = process.env.GITHUB_APP_ID?.trim();
-  const hasKey = !!(process.env.GITHUB_APP_PRIVATE_KEY?.trim() || process.env.GITHUB_APP_PRIVATE_KEY_PATH?.trim());
+  const hasKey = !!(
+    process.env.GITHUB_APP_PRIVATE_KEY?.trim() || process.env.GITHUB_APP_PRIVATE_KEY_PATH?.trim()
+  );
   return appId && hasKey ? { appId } : null;
 });
 
@@ -1426,7 +1435,7 @@ ipcMain.handle('get-github-installation-token', async (_event, owner: string) =>
     const cacheKey = `${appId}:${owner}`;
     const cached = installationTokenCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now() + 60_000) {
-      return { token: cached.token };
+      return { token: cached.token, expiresAt: new Date(cached.expiresAt).toISOString() };
     }
 
     const jwt = generateGitHubAppJWT(appId, privateKey);
@@ -1488,7 +1497,10 @@ ipcMain.handle('start-github-app-install', async () => {
   const appId = process.env.GITHUB_APP_ID?.trim();
   const privateKey = await loadAppPrivateKey();
   if (!appId || !privateKey) {
-    return { error: 'GitHub App not configured. Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY (or GITHUB_APP_PRIVATE_KEY_PATH) in your .env file.' };
+    return {
+      error:
+        'GitHub App not configured. Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY (or GITHUB_APP_PRIVATE_KEY_PATH) in your .env file.',
+    };
   }
   try {
     const jwt = generateGitHubAppJWT(appId, privateKey);

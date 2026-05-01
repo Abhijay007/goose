@@ -183,9 +183,13 @@ type ElectronAPI = {
   onGitHubAuthCallback: (callback: (url: string) => void) => void;
   offGitHubAuthCallback: (callback: (url: string) => void) => void;
   startGitHubAppInstall: () => Promise<{ ok: true; slug: string } | { error: string }>;
-  getGitHubInstallationAccount: (installationId: number) => Promise<{ login: string; avatar_url: string; html_url: string } | { error: string }>;
+  getGitHubInstallationAccount: (
+    installationId: number
+  ) => Promise<{ login: string; avatar_url: string; html_url: string } | { error: string }>;
   getGitHubAppConfig: () => Promise<{ appId: string } | null>;
-  getGitHubInstallationToken: (owner: string) => Promise<{ token: string; expiresAt: string } | { error: string }>;
+  getGitHubInstallationToken: (
+    owner: string
+  ) => Promise<{ token: string; expiresAt: string } | { error: string }>;
   // Recipe warning functions
   closeWindow: () => void;
   hasAcceptedRecipeBefore: (recipe: Recipe) => Promise<boolean>;
@@ -350,6 +354,10 @@ const electronAPI: ElectronAPI = {
   closeApp: (appName: string) => ipcRenderer.invoke('close-app', appName),
   addRecentDir: (dir: string) => ipcRenderer.invoke('add-recent-dir', dir),
   onGitHubAuthCallback: (callback: (url: string) => void) => {
+    const existing = githubAuthListeners.get(callback);
+    if (existing) {
+      ipcRenderer.removeListener('github-auth-callback', existing);
+    }
     const wrapped = (_event: Electron.IpcRendererEvent, url: string) => callback(url);
     githubAuthListeners.set(callback, wrapped);
     ipcRenderer.on('github-auth-callback', wrapped);

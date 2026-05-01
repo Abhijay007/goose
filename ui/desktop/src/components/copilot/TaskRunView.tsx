@@ -148,7 +148,8 @@ function describeToolCall(
     case 'shell': {
       const cmd = String(args.command ?? '');
       const { label, icon } = describeShellCommand(cmd);
-      return { label, detail: cmd.slice(0, 100), icon };
+      const redacted = cmd.replace(/x-access-token:[^@\s]+@/g, 'x-access-token:***@');
+      return { label, detail: redacted.slice(0, 100), icon };
     }
     case 'text_editor': {
       const path = String(args.path ?? args.file_path ?? '');
@@ -199,16 +200,14 @@ function buildTaskPrompt(
   repo: GitHubRunRepo,
   branch: string
 ): string {
-  const cloneUrl = `https://x-access-token:${token}@github.com/${repo.full_name}.git`;
-  const remoteUrl = `https://github.com/${repo.full_name}.git`;
-  const pushUrl = `https://x-access-token:${token}@github.com/${repo.full_name}.git`;
+  const repoUrl = `https://github.com/${repo.full_name}.git`;
   const dir = `/tmp/goose-${repo.name}-${Date.now()}`;
+  const authHeader = `Authorization: bearer ${token}`;
 
   return `You are an autonomous GitHub coding agent. Use only shell and text_editor tools.
 
 REPOSITORY: ${repo.full_name}
 BASE BRANCH: ${branch}
-GITHUB_TOKEN: ${token}
 
 STRICT RULES — follow these without exception:
 - NEVER run \`open\`, \`osascript\`, \`xdg-open\`, or any GUI command. Terminal only.
@@ -217,17 +216,17 @@ STRICT RULES — follow these without exception:
 - Work autonomously. No clarifying questions.
 
 GIT SETUP (run once at the start):
-  git clone ${cloneUrl} ${dir}
+  git clone -c "http.extraHeader=${authHeader}" ${repoUrl} ${dir}
   cd ${dir}
   git config user.email "goose-copilot[bot]@users.noreply.github.com"
   git config user.name "goose-copilot[bot]"
-  git remote set-url origin ${remoteUrl}
+  git remote set-url origin ${repoUrl}
 
 IF THE TASK IS TO CREATE OR FIX CODE (make a PR, fix a bug, add a feature):
   git checkout -b goose/<short-description>
   # make changes with text_editor or shell
   git add -A && git commit -m "..."
-  git push ${pushUrl} goose/<short-description>
+  git -c "http.extraHeader=${authHeader}" push origin goose/<short-description>
   curl -s -X POST https://api.github.com/repos/${repo.full_name}/pulls \\
     -H "Authorization: Bearer ${token}" \\
     -H "Content-Type: application/json" \\
