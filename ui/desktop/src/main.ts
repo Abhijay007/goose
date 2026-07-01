@@ -55,6 +55,7 @@ import type { GooseApp } from './types/apps';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import { BLOCKED_PROTOCOLS, WEB_PROTOCOLS } from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
+import { discoverClientExtensions, getClientExtensionsInstallDir, readClientExtensionMain } from './main/clientExtensions';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -1990,6 +1991,14 @@ ipcMain.handle('get-acp-url', async (event) => {
   }
   return gooseServeLeases.getAcpUrl(windowId) ?? null;
 });
+
+ipcMain.handle('list-client-extensions', () => discoverClientExtensions());
+
+ipcMain.handle('read-client-extension-main', (_event, extensionId: string) =>
+  readClientExtensionMain(extensionId)
+);
+
+ipcMain.handle('get-client-extensions-install-dir', () => getClientExtensionsInstallDir());
 
 // Handle menu bar icon visibility
 ipcMain.handle('set-menu-bar-icon', async (_event, show: boolean) => {
