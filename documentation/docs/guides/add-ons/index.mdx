@@ -1,0 +1,56 @@
+---
+title: Add-ons
+hide_title: true
+description: UI extensions for goose Desktop
+---
+
+import Card from '@site/src/components/Card';
+import styles from '@site/src/components/Card/styles.module.css';
+
+<h1 className={styles.pageTitle}>Add-ons</h1>
+<p className={styles.pageDescription}>
+  Add-ons extend goose Desktop with custom UI — pages, chat actions, side panels, and message decorations —
+  without changing core app source. They are separate from MCP Extensions, which connect goose to external tools.
+</p>
+
+<div className={styles.categorySection}>
+  <h2 className={styles.categoryTitle}>Documentation</h2>
+  <div className={styles.cardGrid}>
+    <Card
+      title="Overview"
+      description="How add-ons work, where they install, and how they differ from MCP Extensions."
+      link="/docs/guides/add-ons/overview"
+    />
+    <Card
+      title="Install and manage"
+      description="Install, enable, disable, and uninstall add-ons from goose Desktop."
+      link="/docs/guides/add-ons/install-and-manage"
+    />
+    <Card
+      title="Manifest reference"
+      description="client-extension.json schema, extension points, and when clauses."
+      link="/docs/guides/add-ons/manifest-reference"
+    />
+    <Card
+      title="Host protocol"
+      description="postMessage API between goose Desktop and add-on iframes."
+      link="/docs/guides/add-ons/host-protocol"
+    />
+    <Card
+      title="Build an add-on"
+      description="Author a new add-on from scratch using the example templates."
+      link="/docs/guides/add-ons/build-an-add-on"
+    />
+  </div>
+</div>
+
+<div className={styles.categorySection}>
+  <h2 className={styles.categoryTitle}>Marketplace</h2>
+  <div className={styles.cardGrid}>
+    <Card
+      title="Browse add-ons"
+      description="Discover example and community add-ons for goose Desktop."
+      link="/add-ons"
+    />
+  </div>
+</div>

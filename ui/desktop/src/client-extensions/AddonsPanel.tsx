@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Layers, RefreshCw } from 'lucide-react';
+import { Layers, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Switch } from '../components/ui/switch';
 import {
@@ -14,6 +14,7 @@ import { useClientExtensions } from './ClientExtensionsContext';
 import type { ClientExtensionManifest, DiscoveredClientExtension } from './types';
 import { defineMessages, useIntl } from '../i18n';
 import { cn } from '../utils';
+import { toastService } from '../toasts';
 
 const i18n = defineMessages({
   emptyTitle: {
@@ -23,19 +24,51 @@ const i18n = defineMessages({
   empty: {
     id: 'addonsView.empty',
     defaultMessage:
-      'Install UI add-ons with goose client-extension install <path>, or enable dev examples from your local checkout.',
+      'Install UI add-ons with Install add-on, or browse examples on the goose docs marketplace.',
   },
   installHint: {
     id: 'addonsView.installHint',
     defaultMessage: 'Install directory:',
   },
-  cliHint: {
-    id: 'addonsView.cliHint',
-    defaultMessage: 'goose client-extension install <path>',
+  browseAddOns: {
+    id: 'addonsView.browseAddOns',
+    defaultMessage: 'Browse add-ons',
+  },
+  docsLink: {
+    id: 'addonsView.docsLink',
+    defaultMessage: 'Add-ons documentation',
   },
   reload: {
     id: 'addonsView.reload',
     defaultMessage: 'Reload',
+  },
+  install: {
+    id: 'addonsView.install',
+    defaultMessage: 'Install add-on',
+  },
+  installSuccess: {
+    id: 'addonsView.installSuccess',
+    defaultMessage: 'Installed add-on',
+  },
+  installFailed: {
+    id: 'addonsView.installFailed',
+    defaultMessage: 'Failed to install add-on',
+  },
+  uninstallSuccess: {
+    id: 'addonsView.uninstallSuccess',
+    defaultMessage: 'Uninstalled add-on',
+  },
+  uninstallFailed: {
+    id: 'addonsView.uninstallFailed',
+    defaultMessage: 'Failed to uninstall add-on',
+  },
+  confirmUninstall: {
+    id: 'addonsView.confirmUninstall',
+    defaultMessage: 'Uninstall "{name}"? This removes it from your install directory.',
+  },
+  devUninstallHint: {
+    id: 'addonsView.devUninstallHint',
+    defaultMessage: 'Dev examples live in your repo — disable them here instead of uninstalling.',
   },
   version: {
     id: 'addonsView.version',
@@ -81,6 +114,14 @@ const i18n = defineMessages({
     id: 'addonsView.toggleAddon',
     defaultMessage: 'Toggle {name}',
   },
+  uninstall: {
+    id: 'addonsView.uninstall',
+    defaultMessage: 'Uninstall',
+  },
+  uninstallAddon: {
+    id: 'addonsView.uninstallAddon',
+    defaultMessage: 'Uninstall {name}',
+  },
 });
 
 function contributionTags(manifest: ClientExtensionManifest, intl: ReturnType<typeof useIntl>) {
@@ -107,14 +148,17 @@ function AddonCard({
   extension,
   loading,
   onToggle,
+  onUninstall,
 }: {
   extension: DiscoveredClientExtension;
   loading: boolean;
   onToggle: (enabled: boolean) => Promise<void>;
+  onUninstall?: (extensionId: string) => Promise<void>;
 }) {
   const intl = useIntl();
   const [visuallyEnabled, setVisuallyEnabled] = useState(extension.enabled);
   const [isToggling, setIsToggling] = useState(false);
+  const [isUninstalling, setIsUninstalling] = useState(false);
 
   useEffect(() => {
     if (!isToggling) {
@@ -144,6 +188,36 @@ function AddonCard({
     }
   };
 
+  const handleUninstall = async () => {
+    if (!onUninstall || isUninstalling || loading) {
+      return;
+    }
+
+    if (
+      !window.confirm(intl.formatMessage(i18n.confirmUninstall, { name: extension.id }))
+    ) {
+      return;
+    }
+
+    setIsUninstalling(true);
+    try {
+      await onUninstall(extension.id);
+      toastService.success({
+        title: intl.formatMessage(i18n.uninstallSuccess),
+        msg: extension.id,
+      });
+    } catch (error) {
+      toastService.error({
+        title: intl.formatMessage(i18n.uninstallFailed),
+        msg: error instanceof Error ? error.message : extension.id,
+      });
+    } finally {
+      setIsUninstalling(false);
+    }
+  };
+
+  const canUninstall = extension.source === 'installed' && onUninstall;
+
   return (
     <Card
       id={`addon-${extension.id}`}
@@ -158,13 +232,29 @@ function AddonCard({
           <span className="truncate">{extension.id}</span>
         </CardTitle>
         <CardAction>
-          <Switch
-            checked={visuallyEnabled}
-            onCheckedChange={() => void handleToggle()}
-            disabled={loading || isToggling}
-            variant="mono"
-            aria-label={intl.formatMessage(i18n.toggleAddon, { name: extension.id })}
-          />
+          <div className="flex items-center gap-2">
+            {canUninstall && (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                disabled={loading || isUninstalling}
+                onClick={() => void handleUninstall()}
+                className="text-text-secondary hover:text-destructive hover:border-destructive"
+                aria-label={intl.formatMessage(i18n.uninstallAddon, { name: extension.id })}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {intl.formatMessage(i18n.uninstall)}
+              </Button>
+            )}
+            <Switch
+              checked={visuallyEnabled}
+              onCheckedChange={() => void handleToggle()}
+              disabled={loading || isToggling}
+              variant="mono"
+              aria-label={intl.formatMessage(i18n.toggleAddon, { name: extension.id })}
+            />
+          </div>
         </CardAction>
         <CardDescription className="flex flex-wrap items-center gap-2 pt-1">
           <span>{intl.formatMessage(i18n.version, { version: extension.manifest.version })}</span>
@@ -195,6 +285,11 @@ function AddonCard({
             ))}
           </div>
         )}
+        {extension.source === 'dev' && (
+          <p className="mt-3 text-xs text-text-secondary">
+            {intl.formatMessage(i18n.devUninstallHint)}
+          </p>
+        )}
       </CardContent>
     </Card>
   );
@@ -214,9 +309,63 @@ function AddonsGrid({ children }: { children: ReactNode }) {
   );
 }
 
+export function AddonsInstallButton({
+  loading,
+  onInstall,
+}: {
+  loading: boolean;
+  onInstall: () => void;
+}) {
+  const intl = useIntl();
+
+  return (
+    <Button
+      type="button"
+      variant="default"
+      size="sm"
+      onClick={onInstall}
+      disabled={loading}
+      className="flex items-center gap-2"
+    >
+      <Plus className="h-4 w-4" />
+      {intl.formatMessage(i18n.install)}
+    </Button>
+  );
+}
+
+export function useInstallAddonFromFolder() {
+  const intl = useIntl();
+  const { installExtension, loading } = useClientExtensions();
+
+  return {
+    loading,
+    installFromFolder: async () => {
+      const result = await window.electron.directoryChooser();
+      const sourcePath = result.canceled ? null : result.filePaths[0];
+      if (!sourcePath) {
+        return;
+      }
+
+      try {
+        await installExtension(sourcePath);
+        toastService.success({
+          title: intl.formatMessage(i18n.installSuccess),
+          msg: sourcePath,
+        });
+      } catch (error) {
+        toastService.error({
+          title: intl.formatMessage(i18n.installFailed),
+          msg: error instanceof Error ? error.message : sourcePath,
+        });
+      }
+    },
+  };
+}
+
 export function AddonsPanel() {
   const intl = useIntl();
-  const { extensions, loading, setExtensionEnabled } = useClientExtensions();
+  const { extensions, loading, setExtensionEnabled, uninstallExtension } = useClientExtensions();
+  const { installFromFolder, loading: installLoading } = useInstallAddonFromFolder();
   const [installDir, setInstallDir] = useState<string | null>(null);
 
   useEffect(() => {
@@ -225,7 +374,7 @@ export function AddonsPanel() {
 
   if (extensions.length === 0) {
     return (
-      <div className="flex min-h-[320px] items-center justify-center">
+      <div className="flex min-h-[320px] flex-col items-center justify-center gap-4">
         <div className="max-w-md text-center">
           <h3 className="mb-2 text-lg font-medium">{intl.formatMessage(i18n.emptyTitle)}</h3>
           <p className="text-sm text-text-secondary">{intl.formatMessage(i18n.empty)}</p>
@@ -234,9 +383,20 @@ export function AddonsPanel() {
               {intl.formatMessage(i18n.installHint)} {installDir}
             </p>
           )}
-          <p className="mt-2 font-mono text-xs text-text-secondary">
-            {intl.formatMessage(i18n.cliHint)}
-          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <AddonsInstallButton
+            loading={loading || installLoading}
+            onInstall={() => void installFromFolder()}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => window.open('https://goose-docs.ai/add-ons', '_blank')}
+          >
+            {intl.formatMessage(i18n.browseAddOns)}
+          </Button>
         </div>
       </div>
     );
@@ -250,6 +410,7 @@ export function AddonsPanel() {
           extension={extension}
           loading={loading}
           onToggle={(enabled) => setExtensionEnabled(extension.id, enabled)}
+          onUninstall={uninstallExtension}
         />
       ))}
     </AddonsGrid>
@@ -258,21 +419,24 @@ export function AddonsPanel() {
 
 export function AddonsInstallHint() {
   const intl = useIntl();
-  const [installDir, setInstallDir] = useState<string | null>(null);
-
-  useEffect(() => {
-    void window.electron.getClientExtensionsInstallDir().then(setInstallDir);
-  }, []);
-
-  if (!installDir) {
-    return null;
-  }
 
   return (
-    <p className="mb-6 font-mono text-xs text-text-secondary">
-      {intl.formatMessage(i18n.installHint)} {installDir}
+    <p className="mb-6 text-xs text-text-secondary">
+      <button
+        type="button"
+        className="underline hover:text-text-primary"
+        onClick={() => window.open('https://goose-docs.ai/docs/guides/add-ons/', '_blank')}
+      >
+        {intl.formatMessage(i18n.docsLink)}
+      </button>
       <span className="mx-2 text-border-primary">·</span>
-      {intl.formatMessage(i18n.cliHint)}
+      <button
+        type="button"
+        className="underline hover:text-text-primary"
+        onClick={() => window.open('https://goose-docs.ai/add-ons', '_blank')}
+      >
+        {intl.formatMessage(i18n.browseAddOns)}
+      </button>
     </p>
   );
 }

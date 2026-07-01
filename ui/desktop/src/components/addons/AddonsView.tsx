@@ -1,11 +1,15 @@
 import { MainPanelLayout } from '../Layout/MainPanelLayout';
 import {
+  AddonsInstallButton,
   AddonsInstallHint,
   AddonsPanel,
   AddonsReloadButton,
+  useInstallAddonFromFolder,
 } from '../../client-extensions/AddonsPanel';
 import { useClientExtensions } from '../../client-extensions/ClientExtensionsContext';
 import { defineMessages, useIntl } from '../../i18n';
+import { Button } from '../ui/button';
+import { GPSIcon } from '../ui/icons';
 
 const i18n = defineMessages({
   title: {
@@ -17,20 +21,41 @@ const i18n = defineMessages({
     defaultMessage:
       'Install UI add-ons that extend goose Desktop with custom pages, chat actions, side panels, and message decorations. Distinct from MCP Extensions, which connect goose to external tools.',
   },
+  browseAddOns: {
+    id: 'addonsView.browseAddOns',
+    defaultMessage: 'Browse add-ons',
+  },
 });
 
 export default function AddonsView() {
   const intl = useIntl();
   const { loading, reloadExtensions } = useClientExtensions();
+  const { installFromFolder } = useInstallAddonFromFolder();
 
   return (
     <MainPanelLayout>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="bg-background-primary px-8 pb-4 pt-16">
           <div className="page-transition flex flex-col">
-            <div className="mb-1 flex items-center justify-between">
+            <div className="mb-1 flex items-center justify-between gap-3">
               <h1 className="text-4xl font-light">{intl.formatMessage(i18n.title)}</h1>
-              <AddonsReloadButton loading={loading} onReload={() => void reloadExtensions()} />
+              <div className="flex items-center gap-2">
+                <AddonsInstallButton
+                  loading={loading}
+                  onInstall={() => void installFromFolder()}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => window.open('https://goose-docs.ai/add-ons', '_blank')}
+                  className="flex items-center gap-2"
+                >
+                  <GPSIcon size={12} />
+                  {intl.formatMessage(i18n.browseAddOns)}
+                </Button>
+                <AddonsReloadButton loading={loading} onReload={() => void reloadExtensions()} />
+              </div>
             </div>
             <p className="mb-2 max-w-3xl text-sm text-text-secondary">
               {intl.formatMessage(i18n.description)}

@@ -182,6 +182,10 @@ const config: Config = {
             to: "/extensions",
           },
           {
+            from: "/v1/add-ons",
+            to: "/add-ons",
+          },
+          {
             from: "/v1/extensions/detail/nondeveloper",
             to: "/docs/mcp/computer-controller-mcp",
           },
@@ -475,6 +479,10 @@ const config: Config = {
               label: "Extensions",
             },
             {
+              to: "/add-ons",
+              label: "Add-ons",
+            },
+            {
               to: "/skills",
               label: "Skills Marketplace",
             },
@@ -521,6 +529,10 @@ const config: Config = {
             {
               label: "Extensions",
               to: "/extensions",
+            },
+            {
+              label: "Add-ons",
+              to: "/add-ons",
             },
           ],
         },

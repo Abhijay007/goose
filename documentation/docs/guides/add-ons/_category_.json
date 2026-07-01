@@ -1,0 +1,8 @@
+{
+  "label": "Add-ons",
+  "position": 8,
+  "link": {
+    "type": "doc",
+    "id": "guides/add-ons/index"
+  }
+}
