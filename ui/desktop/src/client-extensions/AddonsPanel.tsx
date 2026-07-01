@@ -24,15 +24,19 @@ const i18n = defineMessages({
   empty: {
     id: 'addonsView.empty',
     defaultMessage:
-      'Install UI add-ons with goose client-extension install <path>, or enable dev examples from your local checkout.',
+      'Install UI add-ons with Install add-on, or browse examples on the goose docs marketplace.',
   },
   installHint: {
     id: 'addonsView.installHint',
     defaultMessage: 'Install directory:',
   },
-  cliHint: {
-    id: 'addonsView.cliHint',
-    defaultMessage: 'goose client-extension install <path>',
+  browseAddOns: {
+    id: 'addonsView.browseAddOns',
+    defaultMessage: 'Browse add-ons',
+  },
+  docsLink: {
+    id: 'addonsView.docsLink',
+    defaultMessage: 'Add-ons documentation',
   },
   reload: {
     id: 'addonsView.reload',
@@ -117,10 +121,6 @@ const i18n = defineMessages({
   uninstallAddon: {
     id: 'addonsView.uninstallAddon',
     defaultMessage: 'Uninstall {name}',
-  },
-  uninstallHint: {
-    id: 'addonsView.uninstallHint',
-    defaultMessage: 'goose client-extension uninstall <id>',
   },
 });
 
@@ -365,6 +365,7 @@ export function useInstallAddonFromFolder() {
 export function AddonsPanel() {
   const intl = useIntl();
   const { extensions, loading, setExtensionEnabled, uninstallExtension } = useClientExtensions();
+  const { installFromFolder, loading: installLoading } = useInstallAddonFromFolder();
   const [installDir, setInstallDir] = useState<string | null>(null);
 
   useEffect(() => {
@@ -382,12 +383,20 @@ export function AddonsPanel() {
               {intl.formatMessage(i18n.installHint)} {installDir}
             </p>
           )}
-          <p className="mt-2 font-mono text-xs text-text-secondary">
-            {intl.formatMessage(i18n.cliHint)}
-          </p>
-          <p className="mt-1 font-mono text-xs text-text-secondary">
-            {intl.formatMessage(i18n.uninstallHint)}
-          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <AddonsInstallButton
+            loading={loading || installLoading}
+            onInstall={() => void installFromFolder()}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => window.open('https://goose-docs.ai/add-ons', '_blank')}
+          >
+            {intl.formatMessage(i18n.browseAddOns)}
+          </Button>
         </div>
       </div>
     );
@@ -410,21 +419,24 @@ export function AddonsPanel() {
 
 export function AddonsInstallHint() {
   const intl = useIntl();
-  const [installDir, setInstallDir] = useState<string | null>(null);
-
-  useEffect(() => {
-    void window.electron.getClientExtensionsInstallDir().then(setInstallDir);
-  }, []);
-
-  if (!installDir) {
-    return null;
-  }
 
   return (
-    <p className="mb-6 font-mono text-xs text-text-secondary">
-      {intl.formatMessage(i18n.installHint)} {installDir}
+    <p className="mb-6 text-xs text-text-secondary">
+      <button
+        type="button"
+        className="underline hover:text-text-primary"
+        onClick={() => window.open('https://goose-docs.ai/docs/guides/add-ons/', '_blank')}
+      >
+        {intl.formatMessage(i18n.docsLink)}
+      </button>
       <span className="mx-2 text-border-primary">·</span>
-      {intl.formatMessage(i18n.cliHint)}
+      <button
+        type="button"
+        className="underline hover:text-text-primary"
+        onClick={() => window.open('https://goose-docs.ai/add-ons', '_blank')}
+      >
+        {intl.formatMessage(i18n.browseAddOns)}
+      </button>
     </p>
   );
 }

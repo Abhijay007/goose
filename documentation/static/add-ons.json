@@ -1,0 +1,62 @@
+[
+  {
+    "id": "hello-chat-action",
+    "name": "Hello Chat Action",
+    "description": "Adds Hello and Fill buttons to the chat input bar. Demonstrates the chatAction extension point and session.when clauses.",
+    "version": "0.1.0",
+    "link": "https://github.com/aaif-goose/goose/tree/main/examples/client-extensions/hello-chat-action",
+    "source_path": "examples/client-extensions/hello-chat-action",
+    "is_example": true,
+    "endorsed": true,
+    "contributions": ["chatAction"],
+    "installation_notes": "In goose Desktop, open Add-ons, click Install add-on, and select this folder. When running from source, enable the dev example from Add-ons instead.",
+    "engines": {
+      "grc": ">=1.40.0"
+    }
+  },
+  {
+    "id": "hello-page",
+    "name": "Hello Page",
+    "description": "Adds a sidebar page under Add-on pages with custom HTML in the main content area. Demonstrates the rootLink extension point.",
+    "version": "0.1.0",
+    "link": "https://github.com/aaif-goose/goose/tree/main/examples/client-extensions/hello-page",
+    "source_path": "examples/client-extensions/hello-page",
+    "is_example": true,
+    "endorsed": true,
+    "contributions": ["rootLink"],
+    "installation_notes": "Install from the examples folder via Add-ons → Install add-on, then enable the add-on and open Hello Page from the sidebar.",
+    "engines": {
+      "grc": ">=1.40.0"
+    }
+  },
+  {
+    "id": "hello-sidecar",
+    "name": "Hello Sidecar",
+    "description": "Adds a collapsible right-side panel on the chat route that receives session context from the host. Demonstrates the sidecar extension point.",
+    "version": "0.1.0",
+    "link": "https://github.com/aaif-goose/goose/tree/main/examples/client-extensions/hello-sidecar",
+    "source_path": "examples/client-extensions/hello-sidecar",
+    "is_example": true,
+    "endorsed": true,
+    "contributions": ["sidecar"],
+    "installation_notes": "Enable from Add-ons, open a chat session, and use the panel icon in the top-right to toggle the sidecar.",
+    "engines": {
+      "grc": ">=1.40.0"
+    }
+  },
+  {
+    "id": "message-decorations",
+    "name": "Message Decorations",
+    "description": "Shows an image badge on messages with attachments and a formatted JSON preview for assistant replies with json code blocks.",
+    "version": "0.1.0",
+    "link": "https://github.com/aaif-goose/goose/tree/main/examples/client-extensions/message-decorations",
+    "source_path": "examples/client-extensions/message-decorations",
+    "is_example": true,
+    "endorsed": true,
+    "contributions": ["contentSuffix", "customRender"],
+    "installation_notes": "Enable from Add-ons, then send a message with an image or ask goose to reply with a json code block.",
+    "engines": {
+      "grc": ">=1.40.0"
+    }
+  }
+]
