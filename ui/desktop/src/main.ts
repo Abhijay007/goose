@@ -55,7 +55,7 @@ import type { GooseApp } from './types/apps';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import { BLOCKED_PROTOCOLS, WEB_PROTOCOLS } from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
-import { discoverClientExtensions, getClientExtensionsInstallDir, readClientExtensionMain, setClientExtensionEnabledState } from './main/clientExtensions';
+import { discoverClientExtensions, getClientExtensionsInstallDir, installClientExtension, readClientExtensionMain, setClientExtensionEnabledState, uninstallClientExtension } from './main/clientExtensions';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -2002,6 +2002,14 @@ ipcMain.handle('get-client-extensions-install-dir', () => getClientExtensionsIns
 
 ipcMain.handle('set-client-extension-enabled', (_event, extensionId: string, enabled: boolean) =>
   setClientExtensionEnabledState(extensionId, enabled)
+);
+
+ipcMain.handle('uninstall-client-extension', (_event, extensionId: string) =>
+  uninstallClientExtension(extensionId)
+);
+
+ipcMain.handle('install-client-extension', (_event, sourcePath: string) =>
+  installClientExtension(sourcePath)
 );
 
 // Handle menu bar icon visibility
