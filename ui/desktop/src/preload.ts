@@ -132,6 +132,12 @@ type ElectronAPI = {
   setSetting: <K extends SettingKey>(key: K, value: Settings[K]) => Promise<void>;
   getSecretKey: () => Promise<string | null>;
   getAcpUrl: () => Promise<string | null>;
+  listClientExtensions: () => Promise<import('./client-extensions/types').DiscoveredClientExtension[]>;
+  readClientExtensionMain: (extensionId: string) => Promise<string | null>;
+  getClientExtensionsInstallDir: () => Promise<string>;
+  setClientExtensionEnabled: (extensionId: string, enabled: boolean) => Promise<import('./client-extensions/types').DiscoveredClientExtension[]>;
+  uninstallClientExtension: (extensionId: string) => Promise<import('./client-extensions/types').DiscoveredClientExtension[]>;
+  installClientExtension: (sourcePath: string) => Promise<import('./client-extensions/types').DiscoveredClientExtension[]>;
   setWakelock: (enable: boolean) => Promise<boolean>;
   getWakelockState: () => Promise<boolean>;
   setSpellcheck: (enable: boolean) => Promise<boolean>;
@@ -254,6 +260,16 @@ const electronAPI: ElectronAPI = {
   },
   getSecretKey: () => ipcRenderer.invoke('get-secret-key'),
   getAcpUrl: () => ipcRenderer.invoke('get-acp-url'),
+  listClientExtensions: () => ipcRenderer.invoke('list-client-extensions'),
+  readClientExtensionMain: (extensionId: string) =>
+    ipcRenderer.invoke('read-client-extension-main', extensionId),
+  getClientExtensionsInstallDir: () => ipcRenderer.invoke('get-client-extensions-install-dir'),
+  setClientExtensionEnabled: (extensionId: string, enabled: boolean) =>
+    ipcRenderer.invoke('set-client-extension-enabled', extensionId, enabled),
+  uninstallClientExtension: (extensionId: string) =>
+    ipcRenderer.invoke('uninstall-client-extension', extensionId),
+  installClientExtension: (sourcePath: string) =>
+    ipcRenderer.invoke('install-client-extension', sourcePath),
   setWakelock: (enable: boolean) => ipcRenderer.invoke('set-wakelock', enable),
   getWakelockState: () => ipcRenderer.invoke('get-wakelock-state'),
   setSpellcheck: (enable: boolean) => ipcRenderer.invoke('set-spellcheck', enable),

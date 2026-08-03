@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, LayoutPanelTop } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigationContext } from './NavigationContext';
 import { useConfig } from '../ConfigContext';
@@ -18,6 +18,7 @@ import { acpRenameSession, type SessionListItem } from '../../acp/sessions';
 import { cn } from '../../utils';
 import type { ProjectGroup } from '../../utils/projectSessions';
 import { defineMessages, useIntl } from '../../i18n';
+import { useClientExtensions } from '../../client-extensions/ClientExtensionsContext';
 
 type StreamState = 'idle' | 'loading' | 'streaming' | 'error';
 
@@ -38,6 +39,10 @@ const i18n = defineMessages({
   untitledSession: {
     id: 'navigationPanel.untitledSession',
     defaultMessage: 'Untitled session',
+  },
+  addonPages: {
+    id: 'navigationPanel.addonPages',
+    defaultMessage: 'Add-on pages',
   },
 });
 
@@ -123,6 +128,7 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
   const { isNavExpanded } = useNavigationContext();
   const location = useLocation();
   const { extensionsList } = useConfig();
+  const { getRootLinks } = useClientExtensions();
 
   const appsExtensionEnabled = !!extensionsList?.find((ext) => ext.name === 'apps')?.enabled;
 
@@ -143,6 +149,19 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
     handleNavClick,
     handleSessionClick,
   } = useNavigationSessions();
+
+  const extensionNavItems = useMemo<NavItem[]>(() => {
+    const links = getRootLinks({
+      sessionId: activeSessionId ?? null,
+      route: location.pathname,
+    });
+    return links.map((link) => ({
+      id: `client-ext-${link.extensionId}-${link.id}`,
+      path: link.path,
+      label: link.label,
+      icon: LayoutPanelTop,
+    }));
+  }, [activeSessionId, getRootLinks, location.pathname]);
 
   const [sessionStatuses, setSessionStatuses] = useState<Map<string, SessionStatus>>(new Map());
 
@@ -224,6 +243,21 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
             onClick={() => handleNavClick(item.path)}
           />
         ))}
+        {extensionNavItems.length > 0 && (
+          <>
+            <div className="px-3 pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-text-secondary">
+              {intl.formatMessage(i18n.addonPages)}
+            </div>
+            {extensionNavItems.map((item) => (
+              <NavRow
+                key={item.id}
+                item={item}
+                active={isActive(item.path)}
+                onClick={() => handleNavClick(item.path)}
+              />
+            ))}
+          </>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col mt-3">

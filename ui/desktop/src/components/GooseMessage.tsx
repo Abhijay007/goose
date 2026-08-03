@@ -23,6 +23,8 @@ import MessageCopyLink from './MessageCopyLink';
 import MessageUsageStats from './MessageUsageStats';
 import { cn } from '../utils';
 import { identifyConsecutiveToolCalls, shouldHideTimestamp } from '../utils/toolCallChaining';
+import { ClientExtensionMessageDecorations } from '../client-extensions/ClientExtensionMessageDecorations';
+import { useMessageDisplayText } from '../client-extensions/useMessageDisplayText';
 
 interface GooseMessageProps {
   sessionId: string;
@@ -50,6 +52,12 @@ export default function GooseMessage({
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   const { textContent: displayText, imagePaths } = getTextAndImageContent(message);
+  const renderedText = useMessageDisplayText(
+    sessionId,
+    message,
+    displayText,
+    imagePaths.length
+  );
   const thinkingContent = getThinkingContent(message);
 
   const timestamp = useMemo(() => formatMessageTimestamp(message.created), [message.created]);
@@ -134,11 +142,11 @@ export default function GooseMessage({
           />
         )}
 
-        {(displayText.trim() || imagePaths.length > 0) && (
+        {(renderedText.trim() || imagePaths.length > 0) && (
           <div className="flex flex-col group">
-            {displayText.trim() && (
+            {renderedText.trim() && (
               <div ref={contentRef} className="agent-message-bubble w-full">
-                <MarkdownContent content={displayText} />
+                <MarkdownContent content={renderedText} />
               </div>
             )}
 
@@ -149,6 +157,13 @@ export default function GooseMessage({
                 ))}
               </div>
             )}
+
+            <ClientExtensionMessageDecorations
+              sessionId={sessionId}
+              message={message}
+              displayText={displayText}
+              imageCount={imagePaths.length}
+            />
 
             {toolRequests.length === 0 && (
               <div className="relative flex items-center justify-between">
