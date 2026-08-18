@@ -184,6 +184,7 @@ type ElectronAPI = {
   addRecentDir: (dir: string) => Promise<boolean>;
   listRecentDirs: () => Promise<string[]>;
   listGitWorktreeDirs: (dir: string) => Promise<string[]>;
+  emitPluginSessionEvent: (event: import('./client-extensions/plugin-events').PluginSessionEvent) => void;
 };
 
 type AppConfigAPI = {
@@ -351,6 +352,7 @@ const electronAPI: ElectronAPI = {
   addRecentDir: (dir: string) => ipcRenderer.invoke('add-recent-dir', dir),
   listRecentDirs: () => ipcRenderer.invoke('list-recent-dirs'),
   listGitWorktreeDirs: (dir: string) => ipcRenderer.invoke('list-git-worktree-dirs', dir),
+  emitPluginSessionEvent: (event) => ipcRenderer.send('plugin-host:session-event', event),
 };
 
 function getAppLocale(): unknown {

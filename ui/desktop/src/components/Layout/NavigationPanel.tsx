@@ -42,7 +42,7 @@ const i18n = defineMessages({
   },
   addonPages: {
     id: 'navigationPanel.addonPages',
-    defaultMessage: 'Add-on pages',
+    defaultMessage: 'Plugin pages',
   },
 });
 
