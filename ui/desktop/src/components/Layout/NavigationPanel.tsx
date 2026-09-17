@@ -403,8 +403,10 @@ export const Navigation: React.FC<{
                           ? `${formatCost(group.totalCost!)}${partial ? '+' : ''}`
                           : '—';
                         const tip = hasCost
-                          ? `${group.sessionsWithCost} of ${group.sessionCount} sessions have cost data`
-                          : 'Cost unavailable';
+                          ? partial
+                            ? `At least ${formatCost(group.totalCost!)} — ${group.sessionsWithCost} of ${group.sessionCount} sessions have cost data. Older sessions may not have pricing info.`
+                            : `${formatCost(group.totalCost!)} total across ${group.sessionCount} session${group.sessionCount === 1 ? '' : 's'}`
+                          : 'Cost unavailable — no sessions have pricing data';
                         return (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -412,7 +414,7 @@ export const Navigation: React.FC<{
                                 {label}
                               </span>
                             </TooltipTrigger>
-                            <TooltipContent side="right">
+                            <TooltipContent side="right" className="max-w-52">
                               <p>{tip}</p>
                             </TooltipContent>
                           </Tooltip>
