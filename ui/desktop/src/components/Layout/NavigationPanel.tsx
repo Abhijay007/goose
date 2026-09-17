@@ -17,6 +17,7 @@ import { SessionIndicators } from '../SessionIndicators';
 import { acpRenameSession, type SessionListItem } from '../../acp/sessions';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 import { formatMessageTimestamp } from '../../utils/timeUtils';
+import { formatCost } from '../../utils/usageFormatting';
 import { cn } from '../../utils';
 import type { ProjectGroup } from '../../utils/projectSessions';
 import { defineMessages, useIntl } from '../../i18n';
@@ -395,15 +396,28 @@ export const Navigation: React.FC<{
                         <ChevronDown className="w-3 h-3 flex-shrink-0" />
                       )}
                       <span className="truncate flex-1">{group.label}</span>
-                      {showPricing && group.totalCost != null && (
-                        <span className="text-[10px] text-text-tertiary ml-1 flex-shrink-0 font-mono">
-                          ${group.totalCost.toFixed(2)}
-                          {group.sessionsWithCost != null &&
-                            group.sessionCount != null &&
-                            group.sessionsWithCost < group.sessionCount &&
-                            '+'}
-                        </span>
-                      )}
+                      {showPricing && (() => {
+                        const hasCost = group.totalCost != null;
+                        const partial = hasCost && group.sessionsWithCost != null && group.sessionCount != null && group.sessionsWithCost < group.sessionCount;
+                        const label = hasCost
+                          ? `${formatCost(group.totalCost!)}${partial ? '+' : ''}`
+                          : '—';
+                        const tip = hasCost
+                          ? `${group.sessionsWithCost} of ${group.sessionCount} sessions have cost data`
+                          : 'Cost unavailable';
+                        return (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="text-[10px] text-text-tertiary ml-1 flex-shrink-0 font-mono" aria-label={tip}>
+                                {label}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">
+                              <p>{tip}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })()}
                     </button>
                     {!isCollapsed &&
                       group.sessions.map((session) => (
