@@ -2374,16 +2374,29 @@ impl SessionStorage {
         let placeholders: String = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
         let query = format!(
             r#"
-            SELECT working_dir,
-                   SUM(accumulated_cost) AS total_cost,
-                   COUNT(*) AS session_count,
-                   COUNT(accumulated_cost) AS sessions_with_cost
-            FROM sessions
-            WHERE session_type IN ({})
-              AND parent_session_id IS NULL
-              AND archived_at IS NULL
-            GROUP BY working_dir
-            ORDER BY MAX(updated_at) DESC
+            SELECT
+                s.working_dir,
+                SUM(CASE
+                    WHEN s.accumulated_cost IS NOT NULL OR l.ledger_cost IS NOT NULL
+                    THEN MAX(COALESCE(s.accumulated_cost, 0.0), COALESCE(l.ledger_cost, 0.0))
+                    ELSE NULL
+                END) AS total_cost,
+                COUNT(*) AS session_count,
+                SUM(CASE
+                    WHEN s.accumulated_cost IS NOT NULL OR l.ledger_cost IS NOT NULL
+                    THEN 1 ELSE 0
+                END) AS sessions_with_cost
+            FROM sessions s
+            LEFT JOIN (
+                SELECT session_id, SUM(cost) AS ledger_cost
+                FROM usage_ledger
+                WHERE cost IS NOT NULL
+                GROUP BY session_id
+            ) l ON l.session_id = s.id
+            WHERE s.session_type IN ({})
+              AND s.parent_session_id IS NULL
+            GROUP BY s.working_dir
+            ORDER BY MAX(s.updated_at) DESC
             "#,
             placeholders
         );
