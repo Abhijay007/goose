@@ -182,6 +182,14 @@ pub struct SessionUsageTotals {
     pub accumulated_cost: Option<f64>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ProjectCostAggregate {
+    pub working_dir: String,
+    pub total_cost: Option<f64>,
+    pub session_count: u32,
+    pub sessions_with_cost: u32,
+}
+
 impl<'a> SessionUpdateBuilder<'a> {
     fn new(session_manager: &'a SessionManager, session_id: String) -> Self {
         Self {
@@ -500,6 +508,13 @@ impl SessionManager {
 
     pub async fn list_all_sessions(&self) -> Result<Vec<Session>> {
         self.storage.list_sessions_by_types(None).await
+    }
+
+    pub async fn aggregate_project_costs(
+        &self,
+        types: &[SessionType],
+    ) -> Result<Vec<ProjectCostAggregate>> {
+        self.storage.aggregate_project_costs(types).await
     }
 
     pub async fn delete_session(&self, id: &str) -> Result<()> {
@@ -2346,6 +2361,53 @@ impl SessionStorage {
             total_sessions: row.0 as usize,
             total_tokens: row.1.unwrap_or(0),
         })
+    }
+
+    async fn aggregate_project_costs(
+        &self,
+        types: &[SessionType],
+    ) -> Result<Vec<ProjectCostAggregate>> {
+        if types.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders: String = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let query = format!(
+            r#"
+            SELECT working_dir,
+                   SUM(accumulated_cost) AS total_cost,
+                   COUNT(*) AS session_count,
+                   COUNT(accumulated_cost) AS sessions_with_cost
+            FROM sessions
+            WHERE session_type IN ({})
+              AND parent_session_id IS NULL
+              AND archived_at IS NULL
+            GROUP BY working_dir
+            ORDER BY MAX(updated_at) DESC
+            "#,
+            placeholders
+        );
+
+        let pool = self.pool().await?;
+        let mut q = sqlx::query_as::<_, (String, Option<f64>, i64, i64)>(AssertSqlSafe(query));
+        for t in types {
+            q = q.bind(t.to_string());
+        }
+
+        let rows = q.fetch_all(pool).await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(working_dir, total_cost, session_count, sessions_with_cost)| {
+                    ProjectCostAggregate {
+                        working_dir,
+                        total_cost,
+                        session_count: session_count as u32,
+                        sessions_with_cost: sessions_with_cost as u32,
+                    }
+                },
+            )
+            .collect())
     }
 
     async fn record_usage_metrics(
