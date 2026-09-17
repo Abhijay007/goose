@@ -313,16 +313,14 @@ export const Navigation: React.FC<{
   const [showPricing, setShowPricing] = useState(true);
 
   useEffect(() => {
-    window.electron.getSetting('showPricing').then((val) => {
-      if (val !== undefined) setShowPricing(Boolean(val));
-    });
-    const handler = () => {
-      window.electron.getSetting('showPricing').then((val) => {
-        if (val !== undefined) setShowPricing(Boolean(val));
-      });
+    const loadPricingSetting = async () => {
+      const enabled = await window.electron.getSetting('showPricing');
+      setShowPricing(enabled);
     };
-    window.addEventListener('showPricingChanged', handler);
-    return () => window.removeEventListener('showPricingChanged', handler);
+    loadPricingSetting();
+    const handlePricingChange = () => void loadPricingSetting();
+    window.addEventListener('showPricingChanged', handlePricingChange);
+    return () => window.removeEventListener('showPricingChanged', handlePricingChange);
   }, []);
 
   const toggleProjectCollapsed = useCallback((path: string) => {
