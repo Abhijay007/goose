@@ -326,3 +326,11 @@ export async function acpImportSession(input: string): Promise<void> {
   const client = await getAcpClient();
   await client.goose.sessionImport_unstable({ input });
 }
+
+export async function acpGetProjectCostAggregate(): Promise<
+  import('@aaif/goose-acp-client').ProjectCostEntry[]
+> {
+  const client = await getAcpClient();
+  const response = await client.goose.sessionCostAggregate_unstable({});
+  return response.projects;
+}

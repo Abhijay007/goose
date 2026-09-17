@@ -315,6 +315,20 @@ export const Navigation: React.FC<{
 
   const [isChatsExpanded, setIsChatsExpanded] = useState(true);
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
+  const [showPricing, setShowPricing] = useState(true);
+
+  useEffect(() => {
+    window.electron.getSetting('showPricing').then((val) => {
+      if (val !== undefined) setShowPricing(Boolean(val));
+    });
+    const handler = () => {
+      window.electron.getSetting('showPricing').then((val) => {
+        if (val !== undefined) setShowPricing(Boolean(val));
+      });
+    };
+    window.addEventListener('showPricingChanged', handler);
+    return () => window.removeEventListener('showPricingChanged', handler);
+  }, []);
 
   const toggleProjectCollapsed = useCallback((path: string) => {
     setCollapsedProjects((prev) => {
@@ -387,7 +401,16 @@ export const Navigation: React.FC<{
                       ) : (
                         <ChevronDown className="w-3 h-3 flex-shrink-0" />
                       )}
-                      <span className="truncate">{group.label}</span>
+                      <span className="truncate flex-1">{group.label}</span>
+                      {showPricing && group.totalCost != null && (
+                        <span className="text-[10px] text-text-tertiary ml-1 flex-shrink-0 font-mono">
+                          ${group.totalCost.toFixed(2)}
+                          {group.sessionsWithCost != null &&
+                            group.sessionCount != null &&
+                            group.sessionsWithCost < group.sessionCount &&
+                            '+'}
+                        </span>
+                      )}
                     </button>
                     {!isCollapsed &&
                       group.sessions.map((session) => (
