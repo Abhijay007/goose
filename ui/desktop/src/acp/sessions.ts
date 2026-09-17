@@ -331,3 +331,11 @@ export async function acpShareSessionNostr(sessionId: string, relays: string[]) 
   const client = await getAcpClient();
   return await client.goose.sessionShareNostr_unstable({ sessionId, relays });
 }
+
+export async function acpGetProjectCostAggregate(): Promise<
+  import('@aaif/goose-acp-client').ProjectCostEntry[]
+> {
+  const client = await getAcpClient();
+  const response = await client.goose.sessionCostAggregate_unstable({});
+  return response.projects;
+}
