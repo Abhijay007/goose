@@ -10,7 +10,7 @@ import {
   acpListRecentSessions,
   type SessionListItem,
 } from '../acp/sessions';
-import type { ProjectCostEntry } from '@aaif/goose-acp-client';
+import type { SessionCostAggregateGroup } from '@aaif/goose-acp-client';
 import { groupSessionsByProject } from '../utils/projectSessions';
 
 const MAX_RECENT_SESSIONS = 25;
@@ -65,11 +65,11 @@ export function useNavigationSessions() {
   const [recentSessions, setRecentSessions] = useState<SessionListItem[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
   const latestFetchIdRef = useRef(0);
-  const [projectCosts, setProjectCosts] = useState<ProjectCostEntry[]>([]);
+  const [projectCosts, setProjectCosts] = useState<SessionCostAggregateGroup[]>([]);
   const recentSessionsByProject = useMemo(() => {
     const groups = groupSessionsByProject(recentSessions);
     if (projectCosts.length === 0) return groups;
-    const costByDir = new Map(projectCosts.map((c) => [c.workingDir, c]));
+    const costByDir = new Map(projectCosts.map((c) => [c.groupKey, c]));
     return groups.map((g) => {
       const cost = costByDir.get(g.path);
       if (!cost) return g;
