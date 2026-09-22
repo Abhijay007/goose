@@ -919,11 +919,11 @@ impl GooseAcpAgent {
             .await
     }
 
-    #[custom_method(ProjectCostAggregateRequest)]
-    async fn dispatch_aggregate_project_costs(
+    #[custom_method(SessionCostAggregateRequest)]
+    async fn dispatch_aggregate_session_costs(
         &self,
-        req: ProjectCostAggregateRequest,
-    ) -> Result<ProjectCostAggregateResponse, agent_client_protocol::Error> {
-        self.on_aggregate_project_costs(req).await
+        req: SessionCostAggregateRequest,
+    ) -> Result<SessionCostAggregateResponse, agent_client_protocol::Error> {
+        self.on_aggregate_session_costs(req).await
     }
 }

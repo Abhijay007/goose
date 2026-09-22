@@ -2201,17 +2201,21 @@ export const zLocalInferenceBuiltinChatTemplatesListResponse_unstable = z.object
     templates: z.array(z.string())
 });
 
-export const zProjectCostAggregateRequest_unstable = z.record(z.string(), z.unknown());
+export const zSessionCostAggregateGroupBy = z.enum(['working_directory']);
 
-export const zProjectCostEntry = z.object({
-    workingDir: z.string(),
+export const zSessionCostAggregateRequest_unstable = z.object({
+    groupBy: zSessionCostAggregateGroupBy.default('working_directory')
+});
+
+export const zSessionCostAggregateGroup = z.object({
+    groupKey: z.string(),
     totalCost: z.number().nullish(),
     sessionCount: z.int().gte(0),
     sessionsWithCost: z.int().gte(0)
 });
 
-export const zProjectCostAggregateResponse_unstable = z.object({
-    projects: z.array(zProjectCostEntry)
+export const zSessionCostAggregateResponse_unstable = z.object({
+    groups: z.array(zSessionCostAggregateGroup)
 });
 
 /**
@@ -2453,7 +2457,7 @@ export const zExtRequest = z.object({
             zLocalInferenceHuggingFaceSearchRequest_unstable,
             zLocalInferenceHuggingFaceRepoVariantsRequest_unstable,
             zLocalInferenceBuiltinChatTemplatesListRequest_unstable,
-            zProjectCostAggregateRequest_unstable
+            zSessionCostAggregateRequest_unstable
         ]),
         z.record(z.string(), z.unknown())
     ]).nullish()
@@ -2541,7 +2545,7 @@ export const zExtResponse = z.union([
                 zLocalInferenceHuggingFaceSearchResponse_unstable,
                 zLocalInferenceHuggingFaceRepoVariantsResponse_unstable,
                 zLocalInferenceBuiltinChatTemplatesListResponse_unstable,
-                zProjectCostAggregateResponse_unstable
+                zSessionCostAggregateResponse_unstable
             ]),
             z.unknown()
         ]).optional()
