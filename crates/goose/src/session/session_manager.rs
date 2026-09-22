@@ -183,7 +183,7 @@ pub struct SessionUsageTotals {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProjectCostAggregate {
+pub struct SessionCostAggregateRow {
     pub working_dir: String,
     pub total_cost: Option<f64>,
     pub session_count: u32,
@@ -510,11 +510,11 @@ impl SessionManager {
         self.storage.list_sessions_by_types(None).await
     }
 
-    pub async fn aggregate_project_costs(
+    pub async fn aggregate_session_costs(
         &self,
         types: &[SessionType],
-    ) -> Result<Vec<ProjectCostAggregate>> {
-        self.storage.aggregate_project_costs(types).await
+    ) -> Result<Vec<SessionCostAggregateRow>> {
+        self.storage.aggregate_session_costs(types).await
     }
 
     pub async fn delete_session(&self, id: &str) -> Result<()> {
@@ -2363,10 +2363,10 @@ impl SessionStorage {
         })
     }
 
-    async fn aggregate_project_costs(
+    async fn aggregate_session_costs(
         &self,
         types: &[SessionType],
-    ) -> Result<Vec<ProjectCostAggregate>> {
+    ) -> Result<Vec<SessionCostAggregateRow>> {
         if types.is_empty() {
             return Ok(Vec::new());
         }
@@ -2374,29 +2374,48 @@ impl SessionStorage {
         let placeholders: String = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
         let query = format!(
             r#"
+            WITH RECURSIVE
+                roots AS (
+                    SELECT id, working_dir, updated_at
+                    FROM sessions
+                    WHERE session_type IN ({})
+                      AND parent_session_id IS NULL
+                ),
+                tree(root_id, node_id) AS (
+                    SELECT id, id FROM roots
+                    UNION ALL
+                    SELECT t.root_id, s.id
+                    FROM sessions s
+                    JOIN tree t ON s.parent_session_id = t.node_id
+                ),
+                node_ledger AS (
+                    SELECT t.node_id, SUM(u.cost) AS ledger_cost
+                    FROM tree t
+                    JOIN usage_ledger u ON u.session_id = t.node_id
+                    WHERE u.cost IS NOT NULL
+                    GROUP BY t.node_id
+                ),
+                root_costs AS (
+                    SELECT
+                        t.root_id,
+                        SUM(CASE
+                            WHEN s.accumulated_cost IS NOT NULL OR nl.ledger_cost IS NOT NULL
+                            THEN MAX(COALESCE(s.accumulated_cost, 0.0), COALESCE(nl.ledger_cost, 0.0))
+                        END) AS tree_cost
+                    FROM tree t
+                    JOIN sessions s ON s.id = t.node_id
+                    LEFT JOIN node_ledger nl ON nl.node_id = t.node_id
+                    GROUP BY t.root_id
+                )
             SELECT
-                s.working_dir,
-                SUM(CASE
-                    WHEN s.accumulated_cost IS NOT NULL OR l.ledger_cost IS NOT NULL
-                    THEN MAX(COALESCE(s.accumulated_cost, 0.0), COALESCE(l.ledger_cost, 0.0))
-                    ELSE NULL
-                END) AS total_cost,
+                r.working_dir,
+                SUM(rc.tree_cost) AS total_cost,
                 COUNT(*) AS session_count,
-                SUM(CASE
-                    WHEN s.accumulated_cost IS NOT NULL OR l.ledger_cost IS NOT NULL
-                    THEN 1 ELSE 0
-                END) AS sessions_with_cost
-            FROM sessions s
-            LEFT JOIN (
-                SELECT session_id, SUM(cost) AS ledger_cost
-                FROM usage_ledger
-                WHERE cost IS NOT NULL
-                GROUP BY session_id
-            ) l ON l.session_id = s.id
-            WHERE s.session_type IN ({})
-              AND s.parent_session_id IS NULL
-            GROUP BY s.working_dir
-            ORDER BY MAX(s.updated_at) DESC
+                COUNT(rc.tree_cost) AS sessions_with_cost
+            FROM roots r
+            LEFT JOIN root_costs rc ON rc.root_id = r.id
+            GROUP BY r.working_dir
+            ORDER BY MAX(r.updated_at) DESC
             "#,
             placeholders
         );
@@ -2412,7 +2431,7 @@ impl SessionStorage {
             .into_iter()
             .map(
                 |(working_dir, total_cost, session_count, sessions_with_cost)| {
-                    ProjectCostAggregate {
+                    SessionCostAggregateRow {
                         working_dir,
                         total_cost,
                         session_count: session_count as u32,

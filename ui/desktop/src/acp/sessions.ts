@@ -6,7 +6,7 @@ import {
   type NewSessionRequest,
   type SessionInfo,
 } from '@agentclientprotocol/sdk';
-import type { GooseExtension, ProjectCostEntry, SessionExportFormat, SessionImportSource } from '@aaif/goose-acp-client';
+import type { GooseExtension, SessionCostAggregateGroup, SessionExportFormat, SessionImportSource } from '@aaif/goose-acp-client';
 import { getAcpClient } from './acpConnection';
 import type { ExtensionLoadResult } from '../types/extensions';
 import type { Session } from '../types/session';
@@ -332,8 +332,10 @@ export async function acpShareSessionNostr(sessionId: string, relays: string[]) 
   return await client.goose.sessionShareNostr_unstable({ sessionId, relays });
 }
 
-export async function acpGetProjectCostAggregate(): Promise<ProjectCostEntry[]> {
+export async function acpGetProjectCostAggregate(): Promise<SessionCostAggregateGroup[]> {
   const client = await getAcpClient();
-  const response = await client.goose.sessionCostAggregate_unstable({});
-  return response.projects;
+  const response = await client.goose.sessionCostAggregate_unstable({
+    groupBy: 'working_directory',
+  });
+  return response.groups;
 }
