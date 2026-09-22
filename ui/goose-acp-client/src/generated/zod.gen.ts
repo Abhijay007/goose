@@ -2182,7 +2182,7 @@ export const zLocalInferenceBuiltinChatTemplatesListResponse_unstable = z.object
 export const zSessionCostAggregateGroupBy = z.enum(['working_directory']);
 
 export const zSessionCostAggregateRequest_unstable = z.object({
-    groupBy: zSessionCostAggregateGroupBy.default('working_directory')
+    groupBy: zSessionCostAggregateGroupBy.optional().default('working_directory')
 });
 
 export const zSessionCostAggregateGroup = z.object({
