@@ -6734,31 +6734,43 @@
       "x-side": "agent",
       "x-method": "_goose/unstable/local-inference/chat-templates/builtin/list"
     },
-    "ProjectCostAggregateRequest_unstable": {
+    "SessionCostAggregateGroupBy": {
+      "type": "string",
+      "enum": [
+        "working_directory"
+      ]
+    },
+    "SessionCostAggregateRequest_unstable": {
       "type": "object",
+      "properties": {
+        "groupBy": {
+          "$ref": "#/$defs/SessionCostAggregateGroupBy",
+          "default": "working_directory"
+        }
+      },
       "x-side": "agent",
       "x-method": "_goose/unstable/session/cost/aggregate"
     },
-    "ProjectCostAggregateResponse_unstable": {
+    "SessionCostAggregateResponse_unstable": {
       "type": "object",
       "properties": {
-        "projects": {
+        "groups": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ProjectCostEntry"
+            "$ref": "#/$defs/SessionCostAggregateGroup"
           }
         }
       },
       "required": [
-        "projects"
+        "groups"
       ],
       "x-side": "agent",
       "x-method": "_goose/unstable/session/cost/aggregate"
     },
-    "ProjectCostEntry": {
+    "SessionCostAggregateGroup": {
       "type": "object",
       "properties": {
-        "workingDir": {
+        "groupKey": {
           "type": "string"
         },
         "totalCost": {
@@ -6778,7 +6790,7 @@
         }
       },
       "required": [
-        "workingDir",
+        "groupKey",
         "sessionCount",
         "sessionsWithCost"
       ]
@@ -8171,11 +8183,11 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "#/$defs/ProjectCostAggregateRequest_unstable"
+                      "$ref": "#/$defs/SessionCostAggregateRequest_unstable"
                     }
                   ],
                   "description": "Params for _goose/unstable/session/cost/aggregate",
-                  "title": "ProjectCostAggregateRequest_unstable"
+                  "title": "SessionCostAggregateRequest_unstable"
                 }
               ]
             },
@@ -8826,10 +8838,10 @@
                     {
                       "allOf": [
                         {
-                          "$ref": "#/$defs/ProjectCostAggregateResponse_unstable"
+                          "$ref": "#/$defs/SessionCostAggregateResponse_unstable"
                         }
                       ],
-                      "title": "ProjectCostAggregateResponse_unstable"
+                      "title": "SessionCostAggregateResponse_unstable"
                     }
                   ]
                 },
