@@ -6734,12 +6734,6 @@
       "x-side": "agent",
       "x-method": "_goose/unstable/local-inference/chat-templates/builtin/list"
     },
-    "SessionCostAggregateGroupBy": {
-      "type": "string",
-      "enum": [
-        "working_directory"
-      ]
-    },
     "SessionCostAggregateRequest_unstable": {
       "type": "object",
       "properties": {
@@ -6750,6 +6744,12 @@
       },
       "x-side": "agent",
       "x-method": "_goose/unstable/session/cost/aggregate"
+    },
+    "SessionCostAggregateGroupBy": {
+      "type": "string",
+      "enum": [
+        "working_directory"
+      ]
     },
     "SessionCostAggregateResponse_unstable": {
       "type": "object",
