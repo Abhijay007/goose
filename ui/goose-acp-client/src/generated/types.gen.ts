@@ -2640,11 +2640,11 @@ export type LocalInferenceBuiltinChatTemplatesListResponse_unstable = {
     templates: Array<string>;
 };
 
-export type SessionCostAggregateGroupBy = 'working_directory';
-
 export type SessionCostAggregateRequest_unstable = {
     groupBy?: SessionCostAggregateGroupBy;
 };
+
+export type SessionCostAggregateGroupBy = 'working_directory';
 
 export type SessionCostAggregateResponse_unstable = {
     groups: Array<SessionCostAggregateGroup>;
