@@ -5116,4 +5116,58 @@ mod tests {
                 .unwrap();
         assert_eq!(remaining, 0);
     }
+
+    #[tokio::test]
+    async fn test_aggregate_session_costs_parity_with_usage_totals() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let root = sm
+            .create_session(
+                PathBuf::from("/project/a"),
+                "root".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap()
+            .id;
+
+        let child = sm
+            .create_session(
+                PathBuf::from("/project/a"),
+                "child".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap()
+            .id;
+
+        sm.update(&child)
+            .parent_session_id(Some(root.clone()))
+            .apply()
+            .await
+            .unwrap();
+
+        seed_ledger(&sm, &root, &message_usage(100, 20, 0.10, false))
+            .await
+            .unwrap();
+        seed_ledger(&sm, &child, &message_usage(50, 10, 0.05, false))
+            .await
+            .unwrap();
+
+        let root_totals = sm.get_session_usage_totals(&root).await.unwrap();
+        let expected_cost = root_totals.accumulated_cost.unwrap();
+
+        let types = [SessionType::User, SessionType::Scheduled, SessionType::Acp];
+        let rows = sm.aggregate_session_costs(&types).await.unwrap();
+        let row = rows
+            .iter()
+            .find(|r| r.working_dir == "/project/a")
+            .expect("expected aggregate row for /project/a");
+
+        assert!((row.total_cost.unwrap() - expected_cost).abs() < 1e-9);
+        assert_eq!(row.session_count, 1);
+    }
 }
