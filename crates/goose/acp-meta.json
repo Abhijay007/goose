@@ -557,8 +557,8 @@
     },
     {
       "method": "_goose/unstable/session/cost/aggregate",
-      "requestType": "ProjectCostAggregateRequest_unstable",
-      "responseType": "ProjectCostAggregateResponse_unstable"
+      "requestType": "SessionCostAggregateRequest_unstable",
+      "responseType": "SessionCostAggregateResponse_unstable"
     }
   ],
   "notifications": [
