@@ -41,7 +41,7 @@ pub struct ClientExtensionInstall {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ClientExtensionsConfig {
+struct ClientExtensionsConfig {
     #[serde(default)]
     pub disabled: Vec<String>,
     #[serde(default, rename = "enabledDev")]
@@ -70,7 +70,7 @@ fn config_path() -> PathBuf {
     client_extensions_dir().join(CONFIG_FILENAME)
 }
 
-pub fn load_client_extensions_config() -> Option<ClientExtensionsConfig> {
+fn load_client_extensions_config() -> Option<ClientExtensionsConfig> {
     let path = config_path();
     let contents = match fs::read_to_string(&path) {
         Ok(contents) => contents,
@@ -95,7 +95,7 @@ pub fn load_client_extensions_config() -> Option<ClientExtensionsConfig> {
     }
 }
 
-pub fn save_client_extensions_config(config: &ClientExtensionsConfig) -> Result<()> {
+fn save_client_extensions_config(config: &ClientExtensionsConfig) -> Result<()> {
     let dir = client_extensions_dir();
     fs::create_dir_all(&dir)?;
     let mut disabled = config.disabled.clone();
@@ -112,7 +112,7 @@ pub fn save_client_extensions_config(config: &ClientExtensionsConfig) -> Result<
     Ok(())
 }
 
-pub fn is_client_extension_enabled(
+fn is_client_extension_enabled(
     id: &str,
     source: ClientExtensionSource,
     config: Option<&ClientExtensionsConfig>,
