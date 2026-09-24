@@ -1,3 +1,4 @@
+use crate::config::paths::Paths;
 use crate::utils::copy_dir_all;
 use anyhow::{anyhow, bail, Context, Result};
 use fs_err as fs;
@@ -61,9 +62,7 @@ struct LoadedManifest {
 }
 
 pub fn client_extensions_dir() -> PathBuf {
-    dirs::home_dir()
-        .map(|home| home.join(".agents").join("client-extensions"))
-        .unwrap_or_else(|| PathBuf::from(".agents/client-extensions"))
+    Paths::in_agents_home_dir("client-extensions")
 }
 
 fn config_path() -> PathBuf {
@@ -387,21 +386,21 @@ mod tests {
     use serial_test::serial;
     use tempfile::TempDir;
 
-    struct HomeGuard(Option<std::ffi::OsString>);
+    struct PathRootGuard(Option<std::ffi::OsString>);
 
-    impl HomeGuard {
-        fn set(home: &Path) -> Self {
-            let previous = std::env::var_os("HOME");
-            std::env::set_var("HOME", home);
+    impl PathRootGuard {
+        fn set(root: &Path) -> Self {
+            let previous = std::env::var_os("GOOSE_PATH_ROOT");
+            std::env::set_var("GOOSE_PATH_ROOT", root);
             Self(previous)
         }
     }
 
-    impl Drop for HomeGuard {
+    impl Drop for PathRootGuard {
         fn drop(&mut self) {
             match self.0.take() {
-                Some(home) => std::env::set_var("HOME", home),
-                None => std::env::remove_var("HOME"),
+                Some(root) => std::env::set_var("GOOSE_PATH_ROOT", root),
+                None => std::env::remove_var("GOOSE_PATH_ROOT"),
             }
         }
     }
@@ -430,8 +429,8 @@ mod tests {
         let source = TempDir::new().unwrap();
         write_extension(source.path(), "demo-ext");
 
-        let install_root = TempDir::new().unwrap();
-        let _home = HomeGuard::set(install_root.path());
+        let root = TempDir::new().unwrap();
+        let _root = PathRootGuard::set(root.path());
 
         let install = install_client_extension(source.path()).unwrap();
         assert_eq!(install.id, "demo-ext");
@@ -477,8 +476,8 @@ mod tests {
     fn corrupt_config_fails_closed() {
         let source = TempDir::new().unwrap();
         write_extension(source.path(), "demo-ext");
-        let home = TempDir::new().unwrap();
-        let _home = HomeGuard::set(home.path());
+        let root = TempDir::new().unwrap();
+        let _root = PathRootGuard::set(root.path());
 
         install_client_extension(source.path()).unwrap();
         assert!(find("demo-ext").enabled);
@@ -491,8 +490,8 @@ mod tests {
     #[test]
     #[serial]
     fn ignores_extensions_whose_directory_name_differs_from_the_id() {
-        let home = TempDir::new().unwrap();
-        let _home = HomeGuard::set(home.path());
+        let root = TempDir::new().unwrap();
+        let _root = PathRootGuard::set(root.path());
         write_extension(&client_extensions_dir().join("first"), "shared-id");
         write_extension(&client_extensions_dir().join("shared-id"), "shared-id");
 
@@ -517,8 +516,8 @@ mod tests {
         )
         .unwrap();
         fs::write(source.path().join("index.html"), "<html></html>").unwrap();
-        let home = TempDir::new().unwrap();
-        let _home = HomeGuard::set(home.path());
+        let root = TempDir::new().unwrap();
+        let _root = PathRootGuard::set(root.path());
 
         install_client_extension(source.path()).unwrap();
 
@@ -539,8 +538,8 @@ mod tests {
             r#"{"id":"evil-ext","version":"0.1.0","main":"../secret.html"}"#,
         )
         .unwrap();
-        let home = TempDir::new().unwrap();
-        let _home = HomeGuard::set(home.path());
+        let root = TempDir::new().unwrap();
+        let _root = PathRootGuard::set(root.path());
 
         let error = install_client_extension(&source).unwrap_err().to_string();
         assert!(error.contains("escapes the extension directory"), "{error}");
@@ -551,8 +550,8 @@ mod tests {
     fn reads_main_only_for_enabled_extensions() {
         let source = TempDir::new().unwrap();
         write_extension(source.path(), "demo-ext");
-        let home = TempDir::new().unwrap();
-        let _home = HomeGuard::set(home.path());
+        let root = TempDir::new().unwrap();
+        let _root = PathRootGuard::set(root.path());
         install_client_extension(source.path()).unwrap();
 
         assert_eq!(
