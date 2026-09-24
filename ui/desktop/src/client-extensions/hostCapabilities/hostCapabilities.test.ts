@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { publishPluginSessionEvent } from '../plugin-events';
+import { publishExtensionSessionEvent } from '../extensionSessionEvents';
 import { HOST_PERMISSIONS } from './permissions';
 import { COMMON_HOST_POWERS } from './powers';
 import { createHostSession } from './session';
@@ -239,7 +239,7 @@ describe('hostCapabilities', () => {
       capability: 'sessions',
       method: 'subscribe',
     });
-    publishPluginSessionEvent(event);
+    publishExtensionSessionEvent(event);
     expect(post).toHaveBeenCalledWith({
       type: 'grc/host/event',
       capability: 'sessions',
@@ -253,7 +253,7 @@ describe('hostCapabilities', () => {
       method: 'unsubscribe',
     });
     post.mockClear();
-    publishPluginSessionEvent(event);
+    publishExtensionSessionEvent(event);
     expect(post).not.toHaveBeenCalled();
 
     await session.handleInvoke({
@@ -263,7 +263,7 @@ describe('hostCapabilities', () => {
     });
     post.mockClear();
     session.dispose();
-    publishPluginSessionEvent(event);
+    publishExtensionSessionEvent(event);
     expect(post).not.toHaveBeenCalled();
   });
 
@@ -285,7 +285,7 @@ describe('hostCapabilities', () => {
       });
     }
     post.mockClear();
-    publishPluginSessionEvent(event);
+    publishExtensionSessionEvent(event);
 
     expect(post).toHaveBeenCalledTimes(1);
     session.dispose();

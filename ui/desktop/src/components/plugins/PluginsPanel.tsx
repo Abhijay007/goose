@@ -22,100 +22,100 @@ function useClientExtensionsInstallDir(): string | null {
 
 const i18n = defineMessages({
   emptyTitle: {
-    id: 'addonsView.emptyTitle',
+    id: 'pluginsView.emptyTitle',
     defaultMessage: 'No plugins installed yet',
   },
   empty: {
-    id: 'addonsView.empty',
+    id: 'pluginsView.empty',
     defaultMessage:
       'Use Install plugin to pick a folder with client-extension.json, or enable dev examples from your local checkout.',
   },
   installHint: {
-    id: 'addonsView.installHint',
+    id: 'pluginsView.installHint',
     defaultMessage: 'Install directory:',
   },
   reload: {
-    id: 'addonsView.reload',
+    id: 'pluginsView.reload',
     defaultMessage: 'Reload',
   },
   install: {
-    id: 'addonsView.install',
+    id: 'pluginsView.install',
     defaultMessage: 'Install plugin',
   },
   installSuccess: {
-    id: 'addonsView.installSuccess',
+    id: 'pluginsView.installSuccess',
     defaultMessage: 'Installed plugin',
   },
   installFailed: {
-    id: 'addonsView.installFailed',
+    id: 'pluginsView.installFailed',
     defaultMessage: 'Failed to install plugin',
   },
   uninstallSuccess: {
-    id: 'addonsView.uninstallSuccess',
+    id: 'pluginsView.uninstallSuccess',
     defaultMessage: 'Uninstalled plugin',
   },
   uninstallFailed: {
-    id: 'addonsView.uninstallFailed',
+    id: 'pluginsView.uninstallFailed',
     defaultMessage: 'Failed to uninstall plugin',
   },
   confirmUninstall: {
-    id: 'addonsView.confirmUninstall',
+    id: 'pluginsView.confirmUninstall',
     defaultMessage: 'Uninstall "{name}"? This removes it from your install directory.',
   },
   devUninstallHint: {
-    id: 'addonsView.devUninstallHint',
+    id: 'pluginsView.devUninstallHint',
     defaultMessage: 'Dev examples live in your repo — disable them here instead of uninstalling.',
   },
   version: {
-    id: 'addonsView.version',
+    id: 'pluginsView.version',
     defaultMessage: 'Version {version}',
   },
   devSource: {
-    id: 'addonsView.devSource',
+    id: 'pluginsView.devSource',
     defaultMessage: 'Dev example',
   },
   installedSource: {
-    id: 'addonsView.installedSource',
+    id: 'pluginsView.installedSource',
     defaultMessage: 'Installed',
   },
   disabledSource: {
-    id: 'addonsView.disabledSource',
+    id: 'pluginsView.disabledSource',
     defaultMessage: 'Disabled',
   },
   noContributions: {
-    id: 'addonsView.noContributions',
+    id: 'pluginsView.noContributions',
     defaultMessage: 'No UI contributions declared',
   },
   contributionPage: {
-    id: 'addonsView.contribution.page',
+    id: 'pluginsView.contribution.page',
     defaultMessage: 'page',
   },
   contributionChatAction: {
-    id: 'addonsView.contribution.chatAction',
+    id: 'pluginsView.contribution.chatAction',
     defaultMessage: 'chat action',
   },
   contributionMessageSuffix: {
-    id: 'addonsView.contribution.messageSuffix',
+    id: 'pluginsView.contribution.messageSuffix',
     defaultMessage: 'message decoration',
   },
   contributionCustomRender: {
-    id: 'addonsView.contribution.customRender',
+    id: 'pluginsView.contribution.customRender',
     defaultMessage: 'custom render',
   },
   contributionSidecar: {
-    id: 'addonsView.contribution.sidecar',
+    id: 'pluginsView.contribution.sidecar',
     defaultMessage: 'side panel',
   },
-  toggleAddon: {
-    id: 'addonsView.toggleAddon',
+  togglePlugin: {
+    id: 'pluginsView.togglePlugin',
     defaultMessage: 'Toggle {name}',
   },
   uninstall: {
-    id: 'addonsView.uninstall',
+    id: 'pluginsView.uninstall',
     defaultMessage: 'Uninstall',
   },
-  uninstallAddon: {
-    id: 'addonsView.uninstallAddon',
+  uninstallPlugin: {
+    id: 'pluginsView.uninstallPlugin',
     defaultMessage: 'Uninstall {name}',
   },
 });
@@ -140,7 +140,7 @@ function contributionTags(manifest: ClientExtensionManifest, intl: ReturnType<ty
   return tags;
 }
 
-function AddonCard({
+function PluginCard({
   extension,
   loading,
   onToggle,
@@ -216,7 +216,7 @@ function AddonCard({
 
   return (
     <Card
-      id={`addon-${extension.id}`}
+      id={`plugin-${extension.id}`}
       className={cn(
         'min-h-[160px] transition-all duration-200 hover:border-border-primary',
         !extension.enabled && 'opacity-75'
@@ -237,7 +237,7 @@ function AddonCard({
                 disabled={loading || isUninstalling}
                 onClick={() => void handleUninstall()}
                 className="text-text-secondary hover:text-destructive hover:border-destructive"
-                aria-label={intl.formatMessage(i18n.uninstallAddon, { name: extension.id })}
+                aria-label={intl.formatMessage(i18n.uninstallPlugin, { name: extension.id })}
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 {intl.formatMessage(i18n.uninstall)}
@@ -248,7 +248,7 @@ function AddonCard({
               onCheckedChange={() => void handleToggle()}
               disabled={loading || isToggling}
               variant="mono"
-              aria-label={intl.formatMessage(i18n.toggleAddon, { name: extension.id })}
+              aria-label={intl.formatMessage(i18n.togglePlugin, { name: extension.id })}
             />
           </div>
         </CardAction>
@@ -291,7 +291,7 @@ function AddonCard({
   );
 }
 
-function AddonsGrid({ children }: { children: ReactNode }) {
+function PluginsGrid({ children }: { children: ReactNode }) {
   return (
     <div
       className="grid gap-4 p-1"
@@ -305,7 +305,7 @@ function AddonsGrid({ children }: { children: ReactNode }) {
   );
 }
 
-export function AddonsInstallButton({
+export function PluginsInstallButton({
   loading,
   onInstall,
 }: {
@@ -329,7 +329,7 @@ export function AddonsInstallButton({
   );
 }
 
-export function useInstallAddonFromFolder() {
+export function useInstallPluginFromFolder() {
   const intl = useIntl();
   const { installExtension, loading } = useClientExtensions();
 
@@ -358,7 +358,7 @@ export function useInstallAddonFromFolder() {
   };
 }
 
-export function AddonsPanel() {
+export function PluginsPanel() {
   const intl = useIntl();
   const { extensions, loading, setExtensionEnabled, uninstallExtension } = useClientExtensions();
   const installDir = useClientExtensionsInstallDir();
@@ -380,9 +380,9 @@ export function AddonsPanel() {
   }
 
   return (
-    <AddonsGrid>
+    <PluginsGrid>
       {extensions.map((extension) => (
-        <AddonCard
+        <PluginCard
           key={extension.id}
           extension={extension}
           loading={loading}
@@ -390,11 +390,11 @@ export function AddonsPanel() {
           onUninstall={uninstallExtension}
         />
       ))}
-    </AddonsGrid>
+    </PluginsGrid>
   );
 }
 
-export function AddonsInstallHint() {
+export function PluginsInstallHint() {
   const intl = useIntl();
   const installDir = useClientExtensionsInstallDir();
 
@@ -409,7 +409,7 @@ export function AddonsInstallHint() {
   );
 }
 
-export function AddonsReloadButton({
+export function PluginsReloadButton({
   loading,
   onReload,
 }: {

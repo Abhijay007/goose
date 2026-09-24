@@ -8,7 +8,7 @@ import { maybeHandlePlatformEvent } from '../utils/platform_events';
 import { toolNotificationEvent } from './adapter/toolNotifications';
 import { acpChatSessionActions, acpChatSessionStore } from './chatSessionStore';
 import { publishLiveVoiceInteractionEnded } from './liveVoiceNotifications';
-import { publishPluginSessionEvent } from '../client-extensions/plugin-events';
+import { publishExtensionSessionEvent } from '../client-extensions/extensionSessionEvents';
 
 export function handleAcpSessionNotification(notification: SessionNotification): Promise<void> {
   const sessionNameBeforeNotification = acpChatSessionStore.getSnapshot(notification.sessionId)
@@ -30,9 +30,13 @@ export function handleAcpSessionNotification(notification: SessionNotification):
 
   const { sessionId, update } = notification;
   if (update.sessionUpdate === 'agent_message_chunk') {
-    publishPluginSessionEvent({ type: 'agent_message_chunk', sessionId, content: update.content });
+    publishExtensionSessionEvent({
+      type: 'agent_message_chunk',
+      sessionId,
+      content: update.content,
+    });
   } else if (update.sessionUpdate === 'tool_call_update') {
-    publishPluginSessionEvent({
+    publishExtensionSessionEvent({
       type: 'tool_call',
       sessionId,
       toolCallId: update.toolCallId,
@@ -76,7 +80,7 @@ export function handleAcpGooseSessionNotification(
   const update = notification.update;
   if (update.sessionUpdate === 'status_message') {
     const status = update.status;
-    publishPluginSessionEvent({
+    publishExtensionSessionEvent({
       type: 'status_message',
       sessionId: notification.sessionId,
       message: status.message,

@@ -1,4 +1,4 @@
-export type PluginSessionEvent =
+export type ExtensionSessionEvent =
   | {
       type: 'agent_message_chunk';
       sessionId: string;
@@ -18,23 +18,25 @@ export type PluginSessionEvent =
       level: 'notice' | 'progress';
     };
 
-type PluginSessionEventListener = (event: PluginSessionEvent) => void;
+type ExtensionSessionEventListener = (event: ExtensionSessionEvent) => void;
 
-const listeners = new Set<PluginSessionEventListener>();
+const listeners = new Set<ExtensionSessionEventListener>();
 
-export function subscribePluginSessionEvents(listener: PluginSessionEventListener): () => void {
+export function subscribeExtensionSessionEvents(
+  listener: ExtensionSessionEventListener
+): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
   };
 }
 
-export function publishPluginSessionEvent(event: PluginSessionEvent): void {
+export function publishExtensionSessionEvent(event: ExtensionSessionEvent): void {
   for (const listener of [...listeners]) {
     try {
       listener(event);
     } catch (error) {
-      console.error('[plugin-events] listener failed:', error);
+      console.error('[client-extensions] Session event listener failed:', error);
     }
   }
 }
