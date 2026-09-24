@@ -4,7 +4,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/Toolti
 import { cn } from '../utils';
 import { toastService } from '../toasts';
 import { useClientExtensions, useExtensionHostContext } from './ClientExtensionsContext';
-import { isExtensionToHostMessage } from './extensionHostBridge';
+import { parseExtensionToHostMessage } from './messages';
 import type { HostToExtensionMessage, RegisteredChatAction } from './types';
 import { useWindowMessage } from '../hooks/useWindowMessage';
 import { defineMessages, useIntl } from '../i18n';
@@ -46,16 +46,17 @@ function ClientExtensionActionButton({
         return;
       }
 
-      if (!isExtensionToHostMessage(event.data)) {
+      const message = parseExtensionToHostMessage(event.data);
+      if (!message) {
         return;
       }
 
-      switch (event.data.type) {
+      switch (message.type) {
         case 'grc/ui/showMessage':
-          toastService.success({ title: action.label, msg: event.data.text });
+          toastService.success({ title: action.label, msg: message.text });
           break;
         case 'grc/chat/setInput':
-          onSetInput?.(event.data.text);
+          onSetInput?.(message.text);
           break;
         default:
           break;

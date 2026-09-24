@@ -1,12 +1,12 @@
+import { z } from 'zod';
 import { acpListProviderDetails, acpReadDefaults, acpSaveDefaults } from '../../../acp/providers';
+import { parsePayload } from '../payload';
 import type { HostCapabilityDefinition } from '../types';
 
-function requireNonEmptyString(value: unknown, name: string): string {
-  if (typeof value !== 'string' || !value.trim()) {
-    throw new Error(`"${name}" must be a non-empty string`);
-  }
-  return value;
-}
+const setDefaultPayload = z.object({
+  providerId: z.string().trim().min(1),
+  modelId: z.string().trim().min(1).nullish(),
+});
 
 export const providersPower: HostCapabilityDefinition = {
   id: 'providers',
@@ -32,12 +32,7 @@ export const providersPower: HostCapabilityDefinition = {
     setDefault: {
       permission: 'providers:write',
       handle: async (_context, payload) => {
-        const request = (payload ?? {}) as { providerId?: unknown; modelId?: unknown };
-        const providerId = requireNonEmptyString(request.providerId, 'providerId');
-        const modelId =
-          request.modelId === undefined || request.modelId === null
-            ? null
-            : requireNonEmptyString(request.modelId, 'modelId');
+        const { providerId, modelId = null } = parsePayload(setDefaultPayload, payload);
         await acpSaveDefaults(providerId, modelId);
         return { providerId, modelId };
       },

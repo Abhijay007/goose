@@ -1,18 +1,19 @@
+import { z } from 'zod';
 import { acpListRecentSessions } from '../../../acp/sessions';
 import { subscribeExtensionSessionEvents } from '../../extensionSessionEvents';
+import { parsePayload } from '../payload';
 import type { HostCapabilityDefinition } from '../types';
 
 const DEFAULT_SESSION_LIMIT = 50;
 const MAX_SESSION_LIMIT = 100;
 const EVENTS_DISPOSER = 'events';
 
-function resolveLimit(payload: unknown): number {
-  const requested = (payload as { limit?: unknown } | null | undefined)?.limit;
-  if (typeof requested !== 'number' || !Number.isFinite(requested)) {
-    return DEFAULT_SESSION_LIMIT;
-  }
-  return Math.min(Math.max(Math.trunc(requested), 1), MAX_SESSION_LIMIT);
-}
+const listPayload = z.object({
+  limit: z
+    .number()
+    .catch(DEFAULT_SESSION_LIMIT)
+    .transform((limit) => Math.min(Math.max(Math.trunc(limit), 1), MAX_SESSION_LIMIT)),
+});
 
 export const sessionsPower: HostCapabilityDefinition = {
   id: 'sessions',
@@ -21,7 +22,8 @@ export const sessionsPower: HostCapabilityDefinition = {
     list: {
       permission: 'sessions:read',
       handle: async (_context, payload) => {
-        const sessions = await acpListRecentSessions(resolveLimit(payload));
+        const { limit } = parsePayload(listPayload, payload);
+        const sessions = await acpListRecentSessions(limit);
         return sessions.map((session) => ({
           id: session.id,
           name: session.name,

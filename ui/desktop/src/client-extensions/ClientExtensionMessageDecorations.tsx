@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
 import type { Message } from '../types/message';
 import { useClientExtensions } from './ClientExtensionsContext';
-import { isExtensionToHostMessage } from './extensionHostBridge';
+import { parseExtensionToHostMessage } from './messages';
 import { buildMessageExtensionContext, extractCodeBlocks } from './messageContext';
 import { useWindowMessage } from '../hooks/useWindowMessage';
 import type {
@@ -35,13 +35,9 @@ function ClientExtensionRenderSlot({
       return;
     }
 
-    if (!isExtensionToHostMessage(event.data)) {
-      return;
-    }
-
-    if (event.data.type === 'grc/resize') {
-      const nextHeight = Math.max(0, Math.min(event.data.height, 480));
-      setHeight(nextHeight);
+    const message = parseExtensionToHostMessage(event.data);
+    if (message?.type === 'grc/resize') {
+      setHeight(Math.max(0, Math.min(message.height, 480)));
     }
   }, []);
 

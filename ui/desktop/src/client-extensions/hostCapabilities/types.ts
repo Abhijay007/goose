@@ -43,26 +43,3 @@ export type HostCapabilityHostMessage =
       event: string;
       payload?: unknown;
     };
-
-export interface HostCapabilityInvokeMessage {
-  type: 'grc/host/invoke';
-  capability: string;
-  method: string;
-  id?: string;
-  payload?: unknown;
-}
-
-export function isHostCapabilityInvokeMessage(
-  value: unknown
-): value is HostCapabilityInvokeMessage {
-  if (typeof value !== 'object' || value === null || !('type' in value)) {
-    return false;
-  }
-  const record = value as HostCapabilityInvokeMessage;
-  return (
-    record.type === 'grc/host/invoke' &&
-    typeof record.capability === 'string' &&
-    typeof record.method === 'string' &&
-    (record.id === undefined || typeof record.id === 'string')
-  );
-}
