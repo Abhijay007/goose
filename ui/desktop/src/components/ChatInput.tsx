@@ -1816,7 +1816,6 @@ export default function ChatInput({
               </Tooltip>
             )}
 
-            {/* Right: client extension chat actions */}
             <ClientExtensionChatActions
               sessionId={sessionId}
               onSetInput={handleExtensionSetInput}
