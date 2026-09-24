@@ -1,5 +1,5 @@
 import { acpListRecentSessions } from '../../../acp/sessions';
-import { subscribePluginSessionEvents } from '../../plugin-events';
+import { subscribeExtensionSessionEvents } from '../../extensionSessionEvents';
 import type { HostCapabilityDefinition } from '../types';
 
 const DEFAULT_SESSION_LIMIT = 50;
@@ -40,7 +40,7 @@ export const sessionsPower: HostCapabilityDefinition = {
       handle: (context) => {
         context.setDisposer(
           EVENTS_DISPOSER,
-          subscribePluginSessionEvents((event) => context.emit('session', event))
+          subscribeExtensionSessionEvents((event) => context.emit('session', event))
         );
         return { subscribed: true };
       },

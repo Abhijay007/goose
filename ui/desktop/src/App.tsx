@@ -46,7 +46,7 @@ import PermissionSettingsView from './components/settings/permission/PermissionS
 import ExtensionsView, { ExtensionsViewOptions } from './components/extensions/ExtensionsView';
 import RecipesView from './components/recipes/RecipesView';
 import SkillsView from './components/skills/SkillsView';
-import AddonsView from './components/addons/AddonsView';
+import PluginsView from './components/plugins/PluginsView';
 import AppsView from './components/apps/AppsView';
 import StandaloneAppView from './components/apps/StandaloneAppView';
 import ClientExtensionPageView from './client-extensions/ClientExtensionPageView';
@@ -241,8 +241,8 @@ const SkillsRoute = () => {
   return <SkillsView />;
 };
 
-const AddonsRoute = () => {
-  return <AddonsView />;
+const PluginsRoute = () => {
+  return <PluginsView />;
 };
 
 const PermissionRoute = () => {
@@ -720,7 +720,7 @@ export function AppInner() {
               <Route path="schedules" element={<SchedulesRoute />} />
               <Route path="recipes" element={<RecipesRoute />} />
               <Route path="skills" element={<SkillsRoute />} />
-              <Route path="plugins" element={<AddonsRoute />} />
+              <Route path="plugins" element={<PluginsRoute />} />
               <Route path="permission" element={<PermissionRoute />} />
               <Route path="ext/:extensionId/:viewId" element={<ClientExtensionPageView />} />
             </Route>

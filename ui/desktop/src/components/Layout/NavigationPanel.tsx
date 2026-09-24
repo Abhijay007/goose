@@ -82,8 +82,8 @@ const i18n = defineMessages({
     id: 'liveVoice.returnToActive',
     defaultMessage: 'Return to active Live voice',
   },
-  addonPages: {
-    id: 'navigationPanel.addonPages',
+  pluginPages: {
+    id: 'navigationPanel.pluginPages',
     defaultMessage: 'Plugin pages',
   },
 });
@@ -368,7 +368,7 @@ export const Navigation: React.FC<{
         {extensionNavItems.length > 0 && (
           <>
             <div className="px-3 pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-text-secondary">
-              {intl.formatMessage(i18n.addonPages)}
+              {intl.formatMessage(i18n.pluginPages)}
             </div>
             {extensionNavItems.map((item) => (
               <NavRow
