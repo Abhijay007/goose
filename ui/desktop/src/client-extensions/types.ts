@@ -1,9 +1,5 @@
 import type { HostPermission } from './hostCapabilities/permissions';
 
-export const CLIENT_EXTENSION_MANIFEST = 'client-extension.json';
-
-export type { HostPermission };
-
 export interface ChatActionContribution {
   id: string;
   label: string;

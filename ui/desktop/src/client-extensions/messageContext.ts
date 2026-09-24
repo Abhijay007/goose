@@ -29,14 +29,6 @@ export function extractCodeLanguages(text: string): string[] {
   return [...languages];
 }
 
-export function stripCodeBlocksForLanguage(text: string, language: string): string {
-  const pattern = new RegExp(
-    `\`\`\`${language.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\n]*\\n[\\s\\S]*?\`\`\``,
-    'gi'
-  );
-  return text.replace(pattern, '').replace(/\n{3,}/g, '\n\n').trim();
-}
-
 export function stripFirstCodeBlockForLanguage(text: string, language: string): string {
   const pattern = new RegExp(
     `\`\`\`${language.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\n]*\\n[\\s\\S]*?\`\`\``,
