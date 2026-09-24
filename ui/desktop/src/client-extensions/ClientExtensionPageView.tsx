@@ -49,10 +49,7 @@ export default function ClientExtensionPageView() {
   const [html, setHtml] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const view = useMemo(
-    () => parseClientExtensionViewPath(location.pathname),
-    [location.pathname]
-  );
+  const view = useMemo(() => parseClientExtensionViewPath(location.pathname), [location.pathname]);
 
   const extension = useMemo(
     () => (view ? extensions.find((entry) => entry.id === view.extensionId) : undefined),
