@@ -59,6 +59,44 @@ describe('parseClientExtensionManifest', () => {
   });
 });
 
+describe('theme contributions', () => {
+  const theme = {
+    id: 'midnight',
+    label: ' Midnight ',
+    variant: 'dark',
+    tokens: { '--color-background-primary': '#010203', '--bad': 7 },
+  };
+
+  it('parses themes and keeps only string token values', () => {
+    const manifest = parseClientExtensionManifest({ ...base, contributes: { themes: [theme] } });
+
+    expect(manifest?.contributes?.themes).toEqual([
+      {
+        id: 'midnight',
+        label: 'Midnight',
+        variant: 'dark',
+        tokens: { '--color-background-primary': '#010203' },
+      },
+    ]);
+  });
+
+  it('drops themes with an unsafe id, an unknown variant, a blank label or no tokens', () => {
+    const manifest = parseClientExtensionManifest({
+      ...base,
+      contributes: {
+        themes: [
+          { ...theme, id: '../evil' },
+          { ...theme, variant: 'sepia' },
+          { ...theme, label: ' ' },
+          { ...theme, tokens: undefined },
+        ],
+      },
+    });
+
+    expect(manifest?.contributes).toBeUndefined();
+  });
+});
+
 describe('satisfiesGrcEngine', () => {
   it('accepts manifests without an engine constraint', () => {
     expect(satisfiesGrcEngine(base, '1.52.0')).toBe(true);

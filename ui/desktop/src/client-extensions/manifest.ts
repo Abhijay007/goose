@@ -8,6 +8,7 @@ import type {
   CustomRenderMatch,
   RootLinkContribution,
   SidecarContribution,
+  ThemeContribution,
 } from './types';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -183,6 +184,40 @@ function parseSidecars(raw: unknown): SidecarContribution[] | undefined {
   return sidecars.length > 0 ? sidecars : undefined;
 }
 
+function parseThemes(raw: unknown): ThemeContribution[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+
+  const themes = raw
+    .map((entry): ThemeContribution | null => {
+      if (!isRecord(entry) || !isRecord(entry.tokens)) {
+        return null;
+      }
+      if (typeof entry.id !== 'string' || !isSafeExtensionId(entry.id)) {
+        return null;
+      }
+      if (typeof entry.label !== 'string' || !entry.label.trim()) {
+        return null;
+      }
+      if (entry.variant !== 'light' && entry.variant !== 'dark') {
+        return null;
+      }
+
+      const tokens: Record<string, string> = {};
+      for (const [key, value] of Object.entries(entry.tokens)) {
+        if (typeof value === 'string') {
+          tokens[key] = value;
+        }
+      }
+
+      return { id: entry.id, label: entry.label.trim(), variant: entry.variant, tokens };
+    })
+    .filter((entry): entry is ThemeContribution => entry !== null);
+
+  return themes.length > 0 ? themes : undefined;
+}
+
 export function parseClientExtensionManifest(raw: unknown): ClientExtensionManifest | null {
   if (!isRecord(raw)) {
     return null;
@@ -222,13 +257,15 @@ export function parseClientExtensionManifest(raw: unknown): ClientExtensionManif
     const contentSuffixes = parseContentSuffixes(raw.contributes.contentSuffixes);
     const customRenders = parseCustomRenders(raw.contributes.customRenders);
     const sidecars = parseSidecars(raw.contributes.sidecars);
-    if (chatActions || rootLinks || contentSuffixes || customRenders || sidecars) {
+    const themes = parseThemes(raw.contributes.themes);
+    if (chatActions || rootLinks || contentSuffixes || customRenders || sidecars || themes) {
       manifest.contributes = {
         ...(chatActions ? { chatActions } : {}),
         ...(rootLinks ? { rootLinks } : {}),
         ...(contentSuffixes ? { contentSuffixes } : {}),
         ...(customRenders ? { customRenders } : {}),
         ...(sidecars ? { sidecars } : {}),
+        ...(themes ? { themes } : {}),
       };
     }
   }

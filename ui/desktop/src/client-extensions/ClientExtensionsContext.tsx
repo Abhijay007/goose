@@ -15,6 +15,7 @@ import { evaluateWhenClause } from './when';
 import { clientExtensionViewPath } from './routes';
 import { selectCustomRender } from './customRender';
 import { buildSandboxedDocument } from './sandbox';
+import { registerPluginThemes } from '../theme/theme-tokens';
 import {
   acpInstallClientExtension,
   acpListClientExtensions,
@@ -90,6 +91,17 @@ export function ClientExtensionsProvider({ children }: { children: React.ReactNo
     () => extensions.filter((extension) => extension.enabled),
     [extensions]
   );
+
+  useEffect(() => {
+    registerPluginThemes(
+      enabledExtensions.flatMap((extension) =>
+        (extension.manifest.contributes?.themes ?? []).map((theme) => ({
+          ...theme,
+          extensionId: extension.id,
+        }))
+      )
+    );
+  }, [enabledExtensions]);
 
   const setExtensionEnabled = useCallback(
     async (extensionId: string, enabled: boolean) => {
