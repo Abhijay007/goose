@@ -37,12 +37,20 @@ export interface SidecarContribution {
   defaultOpen?: boolean;
 }
 
+export interface ThemeContribution {
+  id: string;
+  label: string;
+  variant: 'light' | 'dark';
+  tokens: Record<string, string>;
+}
+
 export interface ClientExtensionContributes {
   chatActions?: ChatActionContribution[];
   rootLinks?: RootLinkContribution[];
   contentSuffixes?: ContentSuffixContribution[];
   customRenders?: CustomRenderContribution[];
   sidecars?: SidecarContribution[];
+  themes?: ThemeContribution[];
 }
 
 export interface ClientExtensionManifest {
@@ -83,6 +91,10 @@ export interface RegisteredCustomRender extends CustomRenderContribution {
 }
 
 export interface RegisteredSidecar extends SidecarContribution {
+  extensionId: string;
+}
+
+export interface RegisteredTheme extends ThemeContribution {
   extensionId: string;
 }
 
