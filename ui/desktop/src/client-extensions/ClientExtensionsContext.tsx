@@ -14,6 +14,7 @@ import {
 import { evaluateWhenClause } from './when';
 import { clientExtensionViewPath } from './routes';
 import { selectCustomRender } from './customRender';
+import { buildSandboxedDocument } from './sandbox';
 import {
   acpInstallClientExtension,
   acpListClientExtensions,
@@ -36,7 +37,7 @@ interface ClientExtensionsContextValue {
     codeBlocks: CodeBlock[]
   ) => RegisteredCustomRender | null;
   getSidecars: (context: ExtensionHostContext) => RegisteredSidecar[];
-  getExtensionMainHtml: (extensionId: string) => Promise<string | null>;
+  getExtensionFrameDocument: (extensionId: string) => Promise<string | null>;
   reloadExtensions: () => Promise<void>;
   setExtensionEnabled: (extensionId: string, enabled: boolean) => Promise<void>;
   uninstallExtension: (extensionId: string) => Promise<void>;
@@ -130,9 +131,9 @@ export function ClientExtensionsProvider({ children }: { children: React.ReactNo
     void reloadExtensions();
   }, [reloadExtensions]);
 
-  const getExtensionMainHtml = useCallback(async (extensionId: string) => {
+  const getExtensionFrameDocument = useCallback(async (extensionId: string) => {
     try {
-      return await acpReadClientExtensionMain(extensionId);
+      return buildSandboxedDocument(await acpReadClientExtensionMain(extensionId));
     } catch (error) {
       console.warn(`[client-extensions] Failed to read main for "${extensionId}":`, error);
       return null;
@@ -210,7 +211,7 @@ export function ClientExtensionsProvider({ children }: { children: React.ReactNo
       getContentSuffixes,
       getCustomRender,
       getSidecars,
-      getExtensionMainHtml,
+      getExtensionFrameDocument,
       reloadExtensions,
       setExtensionEnabled,
       uninstallExtension,
@@ -226,7 +227,7 @@ export function ClientExtensionsProvider({ children }: { children: React.ReactNo
       getContentSuffixes,
       getCustomRender,
       getSidecars,
-      getExtensionMainHtml,
+      getExtensionFrameDocument,
       reloadExtensions,
       setExtensionEnabled,
       uninstallExtension,
