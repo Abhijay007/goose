@@ -173,7 +173,10 @@ export function ClientExtensionsProvider({ children }: { children: React.ReactNo
   );
 
   const getCustomRender = useCallback(
-    (context: MessageExtensionHostContext, codeBlocks: CodeBlock[]): RegisteredCustomRender | null => {
+    (
+      context: MessageExtensionHostContext,
+      codeBlocks: CodeBlock[]
+    ): RegisteredCustomRender | null => {
       const renders: RegisteredCustomRender[] = [];
       for (const extension of enabledExtensions) {
         for (const contribution of extension.manifest.contributes?.customRenders ?? []) {

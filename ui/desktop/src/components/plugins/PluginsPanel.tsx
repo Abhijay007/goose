@@ -2,16 +2,12 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Layers, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '../ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { useClientExtensions } from '../../client-extensions/ClientExtensionsContext';
-import type { ClientExtensionManifest, DiscoveredClientExtension } from '../../client-extensions/types';
+import type {
+  ClientExtensionManifest,
+  DiscoveredClientExtension,
+} from '../../client-extensions/types';
 import { defineMessages, useIntl } from '../../i18n';
 import { cn } from '../../utils';
 import { toastService } from '../../toasts';
@@ -189,9 +185,7 @@ function PluginCard({
       return;
     }
 
-    if (
-      !window.confirm(intl.formatMessage(i18n.confirmUninstall, { name: extension.id }))
-    ) {
+    if (!window.confirm(intl.formatMessage(i18n.confirmUninstall, { name: extension.id }))) {
       return;
     }
 
