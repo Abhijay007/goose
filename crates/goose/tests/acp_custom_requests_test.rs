@@ -1005,24 +1005,25 @@ fn test_custom_defaults_save_allows_unlisted_model() {
 #[test]
 #[serial]
 fn test_custom_client_extensions_lifecycle() {
-    let home = tempfile::tempdir().unwrap();
-    let source = tempfile::tempdir().unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = scratch.path().join("demo-ext");
+    std::fs::create_dir_all(&source).unwrap();
     std::fs::write(
-        source.path().join("client-extension.json"),
+        source.join("client-extension.json"),
         r#"{"id":"demo-ext","version":"0.1.0","main":"index.html","permissions":["sessions:read"]}"#,
     )
     .unwrap();
-    std::fs::write(source.path().join("index.html"), "<html>demo</html>").unwrap();
-    let source_path = source.path().to_str().unwrap().to_string();
-    let missing_dev_dir = home.path().join("no-dev-extensions");
-    let _env = env_lock::lock_env([
-        ("HOME", Some(home.path().to_str().unwrap())),
-        (
-            "GOOSE_CLIENT_EXTENSIONS_DEV_DIR",
-            Some(missing_dev_dir.to_str().unwrap()),
-        ),
-    ]);
+    std::fs::write(source.join("index.html"), "<html>demo</html>").unwrap();
+    let source_path = source.to_str().unwrap().to_string();
+    let missing_dev_dir = scratch.path().join("no-dev-extensions");
+    let _env = env_lock::lock_env([(
+        "GOOSE_CLIENT_EXTENSIONS_DEV_DIR",
+        Some(missing_dev_dir.to_str().unwrap()),
+    )]);
     let config_dir = write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    let install_dir = goose::config::paths::Paths::in_agents_home_dir("client-extensions")
+        .display()
+        .to_string();
 
     run_test(async move {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
@@ -1039,6 +1040,7 @@ fn test_custom_client_extensions_lifecycle() {
         )
         .await
         .expect("list should succeed");
+        assert_eq!(listed["installDir"], install_dir);
         assert_eq!(listed["extensions"], serde_json::json!([]));
 
         let installed = send_custom(
