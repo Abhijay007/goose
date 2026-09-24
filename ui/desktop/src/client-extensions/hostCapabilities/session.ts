@@ -1,10 +1,7 @@
+import type { HostCapabilityInvokeMessage } from '../messages';
 import type { HostPermission } from './permissions';
 import { findHostCapability, findHostMethod } from './registry';
-import type {
-  HostCallContext,
-  HostCapabilityHostMessage,
-  HostCapabilityInvokeMessage,
-} from './types';
+import type { HostCallContext, HostCapabilityHostMessage } from './types';
 
 export interface HostSession {
   notifyPermissions: () => void;

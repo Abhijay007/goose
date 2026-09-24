@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
-import {
-  isExtensionToHostMessage,
-  notifyExtensionActivate,
-  routeExtensionToHostMessage,
-} from './extensionHostBridge';
+import { notifyExtensionActivate, routeExtensionToHostMessage } from './extensionHostBridge';
+import { parseExtensionToHostMessage } from './messages';
 import { useClientExtensions, useExtensionHostContext } from './ClientExtensionsContext';
 import { createHostSession, type HostSession } from './hostCapabilities';
 import { useWindowMessage } from '../hooks/useWindowMessage';
@@ -135,13 +132,14 @@ export default function ClientExtensionPageView() {
       if (event.source !== iframeRef.current?.contentWindow || !view || !hostSession) {
         return;
       }
-      if (!isExtensionToHostMessage(event.data)) {
+      const message = parseExtensionToHostMessage(event.data);
+      if (!message) {
         return;
       }
 
       await routeExtensionToHostMessage(
         hostSession,
-        event.data,
+        message,
         rootLink?.label ?? intl.formatMessage(i18n.fallbackTitle)
       );
     },

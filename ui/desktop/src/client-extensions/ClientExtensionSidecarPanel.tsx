@@ -11,7 +11,7 @@ import { motion } from 'framer-motion';
 import { PanelRight, X } from 'lucide-react';
 import { toastService } from '../toasts';
 import { useClientExtensions, useExtensionHostContext } from './ClientExtensionsContext';
-import { isExtensionToHostMessage } from './extensionHostBridge';
+import { parseExtensionToHostMessage } from './messages';
 import { useWindowMessage } from '../hooks/useWindowMessage';
 import type { HostToExtensionMessage, RegisteredSidecar } from './types';
 import { NAV_DIMENSIONS } from '../components/Layout/constants';
@@ -205,15 +205,16 @@ function ClientExtensionSidecarContent({
       if (event.source !== iframeRef.current?.contentWindow) {
         return;
       }
-      if (!isExtensionToHostMessage(event.data)) {
+      const message = parseExtensionToHostMessage(event.data);
+      if (!message) {
         return;
       }
 
-      switch (event.data.type) {
+      switch (message.type) {
         case 'grc/ui/showMessage':
           toastService.success({
             title: sidecar.label,
-            msg: event.data.text,
+            msg: message.text,
           });
           break;
         default:

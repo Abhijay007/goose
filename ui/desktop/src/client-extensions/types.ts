@@ -130,9 +130,3 @@ export type HostToExtensionMessage =
       context: MessageExtensionHostContext;
       payload: MessageRenderPayload;
     };
-
-export type ExtensionToHostMessage =
-  | { type: 'grc/ui/showMessage'; text: string }
-  | { type: 'grc/chat/setInput'; text: string }
-  | { type: 'grc/resize'; height: number }
-  | import('./hostCapabilities/types').HostCapabilityInvokeMessage;

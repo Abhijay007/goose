@@ -3,7 +3,6 @@ import { publishExtensionSessionEvent } from '../extensionSessionEvents';
 import { HOST_PERMISSIONS } from './permissions';
 import { COMMON_HOST_POWERS } from './powers';
 import { createHostSession } from './session';
-import { isHostCapabilityInvokeMessage } from './types';
 
 const acpMocks = vi.hoisted(() => ({
   acpListProviderDetails: vi.fn(),
@@ -28,29 +27,6 @@ afterEach(() => {
 });
 
 describe('hostCapabilities', () => {
-  it('recognizes grc/host/invoke messages', () => {
-    expect(
-      isHostCapabilityInvokeMessage({ type: 'grc/host/invoke', capability: 'x', method: 'run' })
-    ).toBe(true);
-    expect(
-      isHostCapabilityInvokeMessage({
-        type: 'grc/host/invoke',
-        capability: 'x',
-        method: 'run',
-        id: 'call-1',
-      })
-    ).toBe(true);
-    expect(
-      isHostCapabilityInvokeMessage({
-        type: 'grc/host/invoke',
-        capability: 'x',
-        method: 'run',
-        id: 7,
-      })
-    ).toBe(false);
-    expect(isHostCapabilityInvokeMessage({ type: 'grc/mesh/check' })).toBe(false);
-  });
-
   it('keeps every method permission declared and every permission in use', () => {
     const used = new Set<string>();
     for (const power of COMMON_HOST_POWERS) {
@@ -193,7 +169,7 @@ describe('hostCapabilities', () => {
       method: 'setDefault',
       payload: {},
     });
-    expect(post.mock.calls[0][0].error).toContain('"providerId" must be a non-empty string');
+    expect(post.mock.calls[0][0].error).toContain('Invalid "providerId"');
 
     await session.handleInvoke({
       type: 'grc/host/invoke',
