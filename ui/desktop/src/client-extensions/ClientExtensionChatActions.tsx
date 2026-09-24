@@ -7,6 +7,18 @@ import { useClientExtensions, useExtensionHostContext } from './ClientExtensions
 import { isExtensionToHostMessage } from './extensionHostBridge';
 import type { HostToExtensionMessage, RegisteredChatAction } from './types';
 import { useWindowMessage } from '../hooks/useWindowMessage';
+import { defineMessages, useIntl } from '../i18n';
+
+const i18n = defineMessages({
+  loadFailed: {
+    id: 'clientExtensionChatActions.loadFailed',
+    defaultMessage: 'Plugin failed to load',
+  },
+  actionFailed: {
+    id: 'clientExtensionChatActions.actionFailed',
+    defaultMessage: 'Plugin action failed',
+  },
+});
 
 interface ExtensionRuntime {
   iframe: HTMLIFrameElement;
@@ -22,6 +34,7 @@ function ClientExtensionActionButton({
   hostContext: ReturnType<typeof useExtensionHostContext>;
   onSetInput?: (text: string) => void;
 }) {
+  const intl = useIntl();
   const { getExtensionMainHtml } = useClientExtensions();
   const runtimeRef = useRef<ExtensionRuntime | null>(null);
   const [activating, setActivating] = useState(false);
@@ -103,7 +116,7 @@ function ClientExtensionActionButton({
       if (!runtime?.iframe.contentWindow) {
         toastService.error({
           title: action.label,
-          msg: 'Extension failed to load',
+          msg: intl.formatMessage(i18n.loadFailed),
         });
         return;
       }
@@ -118,12 +131,12 @@ function ClientExtensionActionButton({
       console.warn('[client-extensions] Action failed:', error);
       toastService.error({
         title: action.label,
-        msg: 'Extension action failed',
+        msg: intl.formatMessage(i18n.actionFailed),
       });
     } finally {
       setActivating(false);
     }
-  }, [action.id, action.label, activating, ensureRuntime, hostContext]);
+  }, [action.id, action.label, activating, ensureRuntime, hostContext, intl]);
 
   return (
     <Tooltip>

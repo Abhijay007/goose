@@ -17,6 +17,22 @@ import type { HostToExtensionMessage, RegisteredSidecar } from './types';
 import { NAV_DIMENSIONS } from '../components/Layout/constants';
 import { Button } from '../components/ui/button';
 import { cn } from '../utils';
+import { defineMessages, useIntl } from '../i18n';
+
+const i18n = defineMessages({
+  loadFailed: {
+    id: 'clientExtensionSidecar.loadFailed',
+    defaultMessage: 'Failed to load plugin "{extensionId}"',
+  },
+  loading: {
+    id: 'clientExtensionSidecar.loading',
+    defaultMessage: 'Loading…',
+  },
+  close: {
+    id: 'clientExtensionSidecar.close',
+    defaultMessage: 'Close sidecar',
+  },
+});
 
 function sidecarKey(sidecar: RegisteredSidecar): string {
   return `${sidecar.extensionId}:${sidecar.id}`;
@@ -157,6 +173,7 @@ function ClientExtensionSidecarContent({
   hostContext: ReturnType<typeof useExtensionHostContext>;
   onClose: () => void;
 }) {
+  const intl = useIntl();
   const { getExtensionMainHtml, registryVersion } = useClientExtensions();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [html, setHtml] = useState<string | null>(null);
@@ -172,7 +189,7 @@ function ClientExtensionSidecarContent({
         return;
       }
       if (!content) {
-        setLoadError(`Failed to load extension "${sidecar.extensionId}"`);
+        setLoadError(intl.formatMessage(i18n.loadFailed, { extensionId: sidecar.extensionId }));
         return;
       }
       setHtml(content);
@@ -181,7 +198,7 @@ function ClientExtensionSidecarContent({
     return () => {
       cancelled = true;
     };
-  }, [getExtensionMainHtml, registryVersion, sidecar.extensionId]);
+  }, [getExtensionMainHtml, intl, registryVersion, sidecar.extensionId]);
 
   const handleExtensionMessage = useCallback(
     (event: MessageEvent) => {
@@ -226,7 +243,13 @@ function ClientExtensionSidecarContent({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between border-b border-border-primary px-3 py-2">
         <span className="text-sm font-medium text-text-primary">{sidecar.label}</span>
-        <Button type="button" variant="ghost" size="xs" onClick={onClose} aria-label="Close sidecar">
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          onClick={onClose}
+          aria-label={intl.formatMessage(i18n.close)}
+        >
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -234,7 +257,7 @@ function ClientExtensionSidecarContent({
         {loadError ? (
           <div className="p-4 text-xs text-text-secondary">{loadError}</div>
         ) : !html ? (
-          <div className="p-4 text-xs text-text-secondary">Loading…</div>
+          <div className="p-4 text-xs text-text-secondary">{intl.formatMessage(i18n.loading)}</div>
         ) : (
           <iframe
             key={`${registryVersion}:${sidecar.extensionId}:${sidecar.id}`}

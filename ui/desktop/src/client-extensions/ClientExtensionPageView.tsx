@@ -13,8 +13,37 @@ import { parseClientExtensionViewPath } from './routes';
 import type { HostToExtensionMessage } from './types';
 import { useNavigationSessions } from '../hooks/useNavigationSessions';
 import { Button } from '../components/ui/button';
+import { defineMessages, useIntl } from '../i18n';
+
+const i18n = defineMessages({
+  invalidRoute: {
+    id: 'clientExtensionPage.invalidRoute',
+    defaultMessage: 'Invalid plugin route',
+  },
+  viewNotFound: {
+    id: 'clientExtensionPage.viewNotFound',
+    defaultMessage: 'Plugin view not found: {extensionId}/{viewId}',
+  },
+  loadFailed: {
+    id: 'clientExtensionPage.loadFailed',
+    defaultMessage: 'Failed to load plugin "{extensionId}"',
+  },
+  loading: {
+    id: 'clientExtensionPage.loading',
+    defaultMessage: 'Loading plugin…',
+  },
+  backToChat: {
+    id: 'clientExtensionPage.backToChat',
+    defaultMessage: 'Back to chat',
+  },
+  fallbackTitle: {
+    id: 'clientExtensionPage.fallbackTitle',
+    defaultMessage: 'Plugin',
+  },
+});
 
 export default function ClientExtensionPageView() {
+  const intl = useIntl();
   const location = useLocation();
   const { extensions, getExtensionMainHtml, registryVersion } = useClientExtensions();
   const hostContext = useExtensionHostContext(null);
@@ -64,13 +93,18 @@ export default function ClientExtensionPageView() {
 
   useEffect(() => {
     if (!view) {
-      setLoadError('Invalid client extension route');
+      setLoadError(intl.formatMessage(i18n.invalidRoute));
       setHtml(null);
       return;
     }
 
     if (!extension || !extension.enabled || !rootLink) {
-      setLoadError(`Extension view not found: ${view.extensionId}/${view.viewId}`);
+      setLoadError(
+        intl.formatMessage(i18n.viewNotFound, {
+          extensionId: view.extensionId,
+          viewId: view.viewId,
+        })
+      );
       setHtml(null);
       return;
     }
@@ -84,7 +118,7 @@ export default function ClientExtensionPageView() {
         return;
       }
       if (!content) {
-        setLoadError(`Failed to load extension "${view.extensionId}"`);
+        setLoadError(intl.formatMessage(i18n.loadFailed, { extensionId: view.extensionId }));
         return;
       }
       setHtml(content);
@@ -93,7 +127,7 @@ export default function ClientExtensionPageView() {
     return () => {
       cancelled = true;
     };
-  }, [extension, getExtensionMainHtml, registryVersion, rootLink, view]);
+  }, [extension, getExtensionMainHtml, intl, registryVersion, rootLink, view]);
 
   const handleExtensionMessage = useCallback(
     async (event: MessageEvent) => {
@@ -105,9 +139,13 @@ export default function ClientExtensionPageView() {
         return;
       }
 
-      await routeExtensionToHostMessage(hostSession, event.data, rootLink?.label ?? 'Extension');
+      await routeExtensionToHostMessage(
+        hostSession,
+        event.data,
+        rootLink?.label ?? intl.formatMessage(i18n.fallbackTitle)
+      );
     },
-    [rootLink?.label, view]
+    [intl, rootLink?.label, view]
   );
 
   useWindowMessage(handleExtensionMessage);
@@ -137,7 +175,7 @@ export default function ClientExtensionPageView() {
   if (!html || !rootLink || !view) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-sm text-text-secondary">
-        Loading extension…
+        {intl.formatMessage(i18n.loading)}
       </div>
     );
   }
@@ -153,7 +191,7 @@ export default function ClientExtensionPageView() {
           className="no-drag"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to chat
+          {intl.formatMessage(i18n.backToChat)}
         </Button>
         <h1 className="text-sm font-medium text-text-primary">{rootLink.label}</h1>
       </div>
