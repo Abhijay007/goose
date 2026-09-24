@@ -12,6 +12,7 @@ import { PanelRight, X } from 'lucide-react';
 import { toastService } from '../toasts';
 import { useClientExtensions, useExtensionHostContext } from './ClientExtensionsContext';
 import { parseExtensionToHostMessage } from './messages';
+import { PLUGIN_FRAME_SANDBOX } from './sandbox';
 import { useWindowMessage } from '../hooks/useWindowMessage';
 import type { HostToExtensionMessage, RegisteredSidecar } from './types';
 import { NAV_DIMENSIONS } from '../components/Layout/constants';
@@ -174,7 +175,7 @@ function ClientExtensionSidecarContent({
   onClose: () => void;
 }) {
   const intl = useIntl();
-  const { getExtensionMainHtml, registryVersion } = useClientExtensions();
+  const { getExtensionFrameDocument, registryVersion } = useClientExtensions();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -184,7 +185,7 @@ function ClientExtensionSidecarContent({
     setLoadError(null);
     setHtml(null);
 
-    void getExtensionMainHtml(sidecar.extensionId).then((content) => {
+    void getExtensionFrameDocument(sidecar.extensionId).then((content) => {
       if (cancelled) {
         return;
       }
@@ -198,7 +199,7 @@ function ClientExtensionSidecarContent({
     return () => {
       cancelled = true;
     };
-  }, [getExtensionMainHtml, intl, registryVersion, sidecar.extensionId]);
+  }, [getExtensionFrameDocument, intl, registryVersion, sidecar.extensionId]);
 
   const handleExtensionMessage = useCallback(
     (event: MessageEvent) => {
@@ -264,7 +265,7 @@ function ClientExtensionSidecarContent({
             key={`${registryVersion}:${sidecar.extensionId}:${sidecar.id}`}
             ref={iframeRef}
             title={sidecar.label}
-            sandbox="allow-scripts"
+            sandbox={PLUGIN_FRAME_SANDBOX}
             srcDoc={html}
             onLoad={notifyActivate}
             className="h-full w-full border-0 bg-background-primary"

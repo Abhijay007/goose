@@ -3,6 +3,7 @@ import { useLocation } from 'react-router';
 import type { Message } from '../types/message';
 import { useClientExtensions } from './ClientExtensionsContext';
 import { parseExtensionToHostMessage } from './messages';
+import { PLUGIN_FRAME_SANDBOX } from './sandbox';
 import { buildMessageExtensionContext, extractCodeBlocks } from './messageContext';
 import { useWindowMessage } from '../hooks/useWindowMessage';
 import type {
@@ -24,7 +25,7 @@ function ClientExtensionRenderSlot({
   context: ReturnType<typeof buildMessageExtensionContext>;
   payload: MessageRenderPayload;
 }) {
-  const { getExtensionMainHtml } = useClientExtensions();
+  const { getExtensionFrameDocument } = useClientExtensions();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number | null>(null);
   const [failed, setFailed] = useState(false);
@@ -47,7 +48,7 @@ function ClientExtensionRenderSlot({
     let cancelled = false;
 
     void (async () => {
-      const html = await getExtensionMainHtml(extensionId);
+      const html = await getExtensionFrameDocument(extensionId);
       if (cancelled) {
         return;
       }
@@ -80,7 +81,7 @@ function ClientExtensionRenderSlot({
     return () => {
       cancelled = true;
     };
-  }, [context, extensionId, getExtensionMainHtml, payload, slotId, slotKind]);
+  }, [context, extensionId, getExtensionFrameDocument, payload, slotId, slotKind]);
 
   if (failed) {
     return null;
@@ -90,7 +91,7 @@ function ClientExtensionRenderSlot({
     <iframe
       ref={iframeRef}
       title={`${extensionId}:${slotId}`}
-      sandbox="allow-scripts"
+      sandbox={PLUGIN_FRAME_SANDBOX}
       className="w-full border-0"
       style={{ height: height ?? 24, minHeight: 24 }}
     />

@@ -5,6 +5,7 @@ import { cn } from '../utils';
 import { toastService } from '../toasts';
 import { useClientExtensions, useExtensionHostContext } from './ClientExtensionsContext';
 import { parseExtensionToHostMessage } from './messages';
+import { PLUGIN_FRAME_SANDBOX } from './sandbox';
 import type { HostToExtensionMessage, RegisteredChatAction } from './types';
 import { useWindowMessage } from '../hooks/useWindowMessage';
 import { defineMessages, useIntl } from '../i18n';
@@ -35,7 +36,7 @@ function ClientExtensionActionButton({
   onSetInput?: (text: string) => void;
 }) {
   const intl = useIntl();
-  const { getExtensionMainHtml } = useClientExtensions();
+  const { getExtensionFrameDocument } = useClientExtensions();
   const runtimeRef = useRef<ExtensionRuntime | null>(null);
   const [activating, setActivating] = useState(false);
 
@@ -72,14 +73,14 @@ function ClientExtensionActionButton({
       return runtimeRef.current;
     }
 
-    const html = await getExtensionMainHtml(action.extensionId);
+    const html = await getExtensionFrameDocument(action.extensionId);
     if (!html) {
       return null;
     }
 
     const iframe = document.createElement('iframe');
     iframe.title = `${action.extensionId} runtime`;
-    iframe.sandbox.add('allow-scripts');
+    iframe.setAttribute('sandbox', PLUGIN_FRAME_SANDBOX);
     iframe.setAttribute('aria-hidden', 'true');
     iframe.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden';
     iframe.srcdoc = html;
@@ -97,7 +98,7 @@ function ClientExtensionActionButton({
     });
 
     return runtime;
-  }, [action.extensionId, getExtensionMainHtml]);
+  }, [action.extensionId, getExtensionFrameDocument]);
 
   useEffect(() => {
     return () => {

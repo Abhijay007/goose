@@ -3,6 +3,7 @@ import { useLocation } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { notifyExtensionActivate, routeExtensionToHostMessage } from './extensionHostBridge';
 import { parseExtensionToHostMessage } from './messages';
+import { PLUGIN_FRAME_SANDBOX } from './sandbox';
 import { useClientExtensions, useExtensionHostContext } from './ClientExtensionsContext';
 import { createHostSession, type HostSession } from './hostCapabilities';
 import { useWindowMessage } from '../hooks/useWindowMessage';
@@ -42,7 +43,7 @@ const i18n = defineMessages({
 export default function ClientExtensionPageView() {
   const intl = useIntl();
   const location = useLocation();
-  const { extensions, getExtensionMainHtml, registryVersion } = useClientExtensions();
+  const { extensions, getExtensionFrameDocument, registryVersion } = useClientExtensions();
   const hostContext = useExtensionHostContext(null);
   const { handleNavClick } = useNavigationSessions();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -107,7 +108,7 @@ export default function ClientExtensionPageView() {
     setLoadError(null);
     setHtml(null);
 
-    void getExtensionMainHtml(view.extensionId).then((content) => {
+    void getExtensionFrameDocument(view.extensionId).then((content) => {
       if (cancelled) {
         return;
       }
@@ -121,7 +122,7 @@ export default function ClientExtensionPageView() {
     return () => {
       cancelled = true;
     };
-  }, [extension, getExtensionMainHtml, intl, registryVersion, rootLink, view]);
+  }, [extension, getExtensionFrameDocument, intl, registryVersion, rootLink, view]);
 
   const handleExtensionMessage = useCallback(
     async (event: MessageEvent) => {
@@ -194,7 +195,7 @@ export default function ClientExtensionPageView() {
         key={`${registryVersion}:${view.extensionId}:${view.viewId}`}
         ref={iframeRef}
         title={rootLink.label}
-        sandbox="allow-scripts"
+        sandbox={PLUGIN_FRAME_SANDBOX}
         srcDoc={html}
         onLoad={notifyActivate}
         className="h-full w-full flex-1 border-0 bg-background-primary"
