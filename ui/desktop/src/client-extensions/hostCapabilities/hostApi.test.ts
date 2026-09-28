@@ -4,6 +4,7 @@ import { createHostApi } from './hostApi';
 
 const actions = {
   startChat: vi.fn(),
+  createSession: vi.fn(),
   openSession: vi.fn(),
   openPage: vi.fn(),
 };

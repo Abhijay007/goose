@@ -8,6 +8,7 @@ export interface StartChatOptions {
 
 export interface HostActions {
   startChat: (options: StartChatOptions) => Promise<string>;
+  createSession: (workingDir?: string) => Promise<string>;
   openSession: (sessionId: string) => void;
   openPage: (extensionId: string, viewId: string) => void;
 }

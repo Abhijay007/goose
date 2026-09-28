@@ -15,9 +15,11 @@ const listPayload = z.object({
     .transform((limit) => Math.min(Math.max(Math.trunc(limit), 1), MAX_SESSION_LIMIT)),
 });
 
+const createPayload = z.object({ workingDir: z.string().trim().min(1).optional() });
+
 export const sessionsPower: HostCapabilityDefinition = {
   id: 'sessions',
-  description: 'List recent sessions and stream live session events.',
+  description: 'List recent sessions, create sessions and stream live session events.',
   methods: {
     list: {
       permission: 'sessions:read',
@@ -35,6 +37,13 @@ export const sessionsPower: HostCapabilityDefinition = {
           providerId: session.providerId,
           modelId: session.modelId,
         }));
+      },
+    },
+    create: {
+      permission: 'sessions:create',
+      handle: async (context, payload) => {
+        const { workingDir } = parsePayload(createPayload, payload);
+        return { sessionId: await context.actions.createSession(workingDir) };
       },
     },
     subscribe: {

@@ -4,9 +4,14 @@ export const HOST_PERMISSIONS = [
   'providers:write',
   'sessions:read',
   'sessions:events',
+  'sessions:create',
   'recipes:read',
   'commands:execute',
   'storage:readwrite',
+  'schedules:read',
+  'schedules:manage',
+  'tools:read',
+  'tools:call',
 ] as const;
 
 export type HostPermission = (typeof HOST_PERMISSIONS)[number];

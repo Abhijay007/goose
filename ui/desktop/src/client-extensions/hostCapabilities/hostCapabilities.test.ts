@@ -6,6 +6,7 @@ import { createHostSession } from './session';
 
 const testActions = () => ({
   startChat: vi.fn(),
+  createSession: vi.fn(),
   openSession: vi.fn(),
   openPage: vi.fn(),
 });

@@ -13,6 +13,7 @@ vi.mock('../../acp/recipe', () => ({
 
 const actions = {
   startChat: vi.fn(),
+  createSession: vi.fn(),
   openSession: vi.fn(),
   openPage: vi.fn(),
 };
