@@ -1,7 +1,20 @@
 import type { HostPermission } from './permissions';
 
+export interface StartChatOptions {
+  prompt?: string;
+  recipeId?: string;
+  workingDir?: string;
+}
+
+export interface HostActions {
+  startChat: (options: StartChatOptions) => Promise<string>;
+  openSession: (sessionId: string) => void;
+  openPage: (extensionId: string, viewId: string) => void;
+}
+
 export interface HostCallContext {
   extensionId: string;
+  actions: HostActions;
   emit: (event: string, payload?: unknown) => void;
   setDisposer: (key: string, dispose: () => void) => void;
   clearDisposer: (key: string) => void;

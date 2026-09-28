@@ -10,6 +10,7 @@ import { useWindowMessage } from '../hooks/useWindowMessage';
 import { parseClientExtensionViewPath } from './routes';
 import type { HostToExtensionMessage } from './types';
 import { useNavigationSessions } from '../hooks/useNavigationSessions';
+import { useHostActions } from './useHostActions';
 import { Button } from '../components/ui/button';
 import { defineMessages, useIntl } from '../i18n';
 
@@ -46,6 +47,7 @@ export default function ClientExtensionPageView() {
   const { extensions, getExtensionFrameDocument, registryVersion } = useClientExtensions();
   const hostContext = useExtensionHostContext(null);
   const { handleNavClick } = useNavigationSessions();
+  const hostActions = useHostActions();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -77,14 +79,15 @@ export default function ClientExtensionPageView() {
     const session = createHostSession(
       extension.id,
       extension.manifest.permissions,
-      postToExtension
+      postToExtension,
+      hostActions
     );
     hostSessionRef.current = session;
     return () => {
       session.dispose();
       hostSessionRef.current = null;
     };
-  }, [extension, postToExtension, registryVersion, view?.viewId]);
+  }, [extension, hostActions, postToExtension, registryVersion, view?.viewId]);
 
   useEffect(() => {
     if (!view) {

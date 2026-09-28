@@ -15,6 +15,7 @@ import { evaluateWhenClause } from './when';
 import { clientExtensionViewPath } from './routes';
 import { selectCustomRender } from './customRender';
 import { buildSandboxedDocument } from './sandbox';
+import { clearExtensionStorage } from './hostCapabilities/powers/storage';
 import { registerPluginThemes } from '../theme/theme-tokens';
 import {
   acpInstallClientExtension,
@@ -119,6 +120,7 @@ export function ClientExtensionsProvider({ children }: { children: React.ReactNo
     async (extensionId: string) => {
       try {
         applyListing(await acpUninstallClientExtension(extensionId));
+        clearExtensionStorage(extensionId);
       } catch (error) {
         console.warn('[client-extensions] Failed to uninstall extension:', error);
         throw error;

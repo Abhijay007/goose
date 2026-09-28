@@ -4,6 +4,12 @@ import { HOST_PERMISSIONS } from './permissions';
 import { COMMON_HOST_POWERS } from './powers';
 import { createHostSession } from './session';
 
+const testActions = () => ({
+  startChat: vi.fn(),
+  openSession: vi.fn(),
+  openPage: vi.fn(),
+});
+
 const acpMocks = vi.hoisted(() => ({
   acpListProviderDetails: vi.fn(),
   acpReadDefaults: vi.fn(),
@@ -40,7 +46,7 @@ describe('hostCapabilities', () => {
 
   it('rejects invoke when the permission is not granted', async () => {
     const post = vi.fn();
-    const session = createHostSession('demo', [], post);
+    const session = createHostSession('demo', [], post, testActions());
 
     await session.handleInvoke({
       type: 'grc/host/invoke',
@@ -60,7 +66,7 @@ describe('hostCapabilities', () => {
 
   it('rejects unknown capabilities and methods, including prototype keys', async () => {
     const post = vi.fn();
-    const session = createHostSession('demo', ['platform:read'], post);
+    const session = createHostSession('demo', ['platform:read'], post, testActions());
 
     await session.handleInvoke({ type: 'grc/host/invoke', capability: 'nope', method: 'run' });
     await session.handleInvoke({ type: 'grc/host/invoke', capability: 'platform', method: 'nope' });
@@ -86,7 +92,7 @@ describe('hostCapabilities', () => {
   it('returns platform info and echoes the call id', async () => {
     vi.stubGlobal('window', { electron: { platform: 'darwin', arch: 'arm64' } });
     const post = vi.fn();
-    const session = createHostSession('demo', ['platform:read'], post);
+    const session = createHostSession('demo', ['platform:read'], post, testActions());
 
     await session.handleInvoke({
       type: 'grc/host/invoke',
@@ -106,7 +112,12 @@ describe('hostCapabilities', () => {
 
   it('announces granted permissions', () => {
     const post = vi.fn();
-    createHostSession('demo', ['sessions:read', 'providers:read'], post).notifyPermissions();
+    createHostSession(
+      'demo',
+      ['sessions:read', 'providers:read'],
+      post,
+      testActions()
+    ).notifyPermissions();
 
     expect(post).toHaveBeenCalledWith({
       type: 'grc/host/permissions',
@@ -125,7 +136,7 @@ describe('hostCapabilities', () => {
       },
     ]);
     const post = vi.fn();
-    const session = createHostSession('demo', ['providers:read'], post);
+    const session = createHostSession('demo', ['providers:read'], post, testActions());
 
     await session.handleInvoke({
       type: 'grc/host/invoke',
@@ -152,7 +163,7 @@ describe('hostCapabilities', () => {
 
   it('requires providers:write and a providerId to change the default', async () => {
     const readOnlyPost = vi.fn();
-    await createHostSession('demo', ['providers:read'], readOnlyPost).handleInvoke({
+    await createHostSession('demo', ['providers:read'], readOnlyPost, testActions()).handleInvoke({
       type: 'grc/host/invoke',
       capability: 'providers',
       method: 'setDefault',
@@ -162,7 +173,7 @@ describe('hostCapabilities', () => {
     expect(acpMocks.acpSaveDefaults).not.toHaveBeenCalled();
 
     const post = vi.fn();
-    const session = createHostSession('demo', ['providers:write'], post);
+    const session = createHostSession('demo', ['providers:write'], post, testActions());
     await session.handleInvoke({
       type: 'grc/host/invoke',
       capability: 'providers',
@@ -182,7 +193,7 @@ describe('hostCapabilities', () => {
 
   it('clamps the session list limit', async () => {
     acpMocks.acpListRecentSessions.mockResolvedValue([]);
-    const session = createHostSession('demo', ['sessions:read'], vi.fn());
+    const session = createHostSession('demo', ['sessions:read'], vi.fn(), testActions());
 
     await session.handleInvoke({
       type: 'grc/host/invoke',
@@ -202,7 +213,7 @@ describe('hostCapabilities', () => {
 
   it('streams session events until unsubscribe or dispose', async () => {
     const post = vi.fn();
-    const session = createHostSession('demo', ['sessions:events'], post);
+    const session = createHostSession('demo', ['sessions:events'], post, testActions());
     const event = {
       type: 'status_message',
       sessionId: 's1',
@@ -245,7 +256,7 @@ describe('hostCapabilities', () => {
 
   it('does not stack subscriptions when subscribe is called twice', async () => {
     const post = vi.fn();
-    const session = createHostSession('demo', ['sessions:events'], post);
+    const session = createHostSession('demo', ['sessions:events'], post, testActions());
     const event = {
       type: 'status_message',
       sessionId: 's1',

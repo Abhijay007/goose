@@ -1,18 +1,20 @@
 import type { HostCapabilityInvokeMessage } from '../messages';
 import type { HostPermission } from './permissions';
 import { findHostCapability, findHostMethod } from './registry';
-import type { HostCallContext, HostCapabilityHostMessage } from './types';
+import type { HostActions, HostCallContext, HostCapabilityHostMessage } from './types';
 
 export interface HostSession {
   notifyPermissions: () => void;
   handleInvoke: (message: HostCapabilityInvokeMessage) => Promise<void>;
+  reset: () => void;
   dispose: () => void;
 }
 
 export function createHostSession(
   extensionId: string,
   permissions: readonly HostPermission[] | undefined,
-  postToExtension: (message: HostCapabilityHostMessage) => void
+  postToExtension: (message: HostCapabilityHostMessage) => void,
+  actions: HostActions
 ): HostSession {
   const granted = new Set<HostPermission>(permissions);
   const disposers = new Map<string, () => void>();
@@ -30,8 +32,15 @@ export function createHostSession(
     dispose?.();
   };
 
+  const runAllDisposers = () => {
+    for (const key of [...disposers.keys()]) {
+      runDisposer(key);
+    }
+  };
+
   const contextFor = (capability: string): HostCallContext => ({
     extensionId,
+    actions,
     emit: (event, payload) => post({ type: 'grc/host/event', capability, event, payload }),
     setDisposer: (key, dispose) => {
       const scopedKey = `${capability}:${key}`;
@@ -75,11 +84,11 @@ export function createHostSession(
       }
     },
 
+    reset: runAllDisposers,
+
     dispose() {
       disposed = true;
-      for (const key of [...disposers.keys()]) {
-        runDisposer(key);
-      }
+      runAllDisposers();
     },
   };
 }
