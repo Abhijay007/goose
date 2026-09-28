@@ -54,6 +54,14 @@ struct ClientExtensionManifest {
     id: String,
     version: String,
     main: String,
+    #[serde(default)]
+    engines: Option<ClientExtensionEngines>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClientExtensionEngines {
+    #[serde(default)]
+    grc: Option<String>,
 }
 
 struct LoadedManifest {
@@ -221,7 +229,16 @@ pub fn install_client_extension(source: &Path) -> Result<ClientExtensionInstall>
     }
 
     fs::create_dir_all(client_extensions_dir())?;
-    copy_dir_all(&source, &destination)?;
+    let staging = install_root.join(format!(".installing-{}", manifest.id));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+    let installed = copy_dir_all(&source, &staging)
+        .and_then(|()| fs::rename(&staging, &destination).map_err(Into::into));
+    if let Err(error) = installed {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(error);
+    }
 
     Ok(ClientExtensionInstall {
         id: manifest.id,
@@ -377,7 +394,63 @@ fn validate_manifest_files(root: &Path, manifest: &ClientExtensionManifest) -> R
         bail!("manifest main must not be empty");
     }
     resolve_main_path(root, &manifest.main)?;
+
+    let constraint = manifest
+        .engines
+        .as_ref()
+        .and_then(|engines| engines.grc.as_deref());
+    if let Some(constraint) = constraint {
+        let running = env!("CARGO_PKG_VERSION");
+        if !satisfies_engine(constraint, running) {
+            bail!("manifest requires goose {constraint}, running {running}");
+        }
+    }
     Ok(())
+}
+
+fn parse_version(value: &str) -> Option<(u64, u64, u64)> {
+    let core = value.trim().split(['-', '+']).next()?;
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().map_or(Some(0), |part| part.parse().ok())?;
+    let patch = parts.next().map_or(Some(0), |part| part.parse().ok())?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
+fn satisfies_comparator(comparator: &str, version: (u64, u64, u64)) -> bool {
+    let (operator, rest) = ["<=", ">=", "<", ">", "="]
+        .iter()
+        .find_map(|operator| {
+            comparator
+                .strip_prefix(operator)
+                .map(|rest| (*operator, rest))
+        })
+        .unwrap_or((">=", comparator));
+    let Some(target) = parse_version(rest) else {
+        return false;
+    };
+    match operator {
+        "<=" => version <= target,
+        "<" => version < target,
+        ">" => version > target,
+        "=" => version == target,
+        _ => version >= target,
+    }
+}
+
+fn satisfies_engine(constraint: &str, version: &str) -> bool {
+    let Some(version) = parse_version(version) else {
+        return false;
+    };
+    let normalized = constraint.replace(',', " ");
+    let comparators: Vec<&str> = normalized.split_whitespace().collect();
+    !comparators.is_empty()
+        && comparators
+            .iter()
+            .all(|comparator| satisfies_comparator(comparator, version))
 }
 
 #[cfg(test)]
@@ -524,6 +597,83 @@ mod tests {
         let manifest = find("demo-ext").manifest;
         assert_eq!(manifest["permissions"][0], "sessions:read");
         assert_eq!(manifest["contributes"]["rootLinks"][0]["label"], "Home");
+    }
+
+    #[test]
+    fn engine_constraints_follow_the_desktop_semantics() {
+        let running = "1.52.0";
+        for (constraint, expected) in [
+            ("1.40.0", true),
+            ("1.40", true),
+            ("1.60.0", false),
+            (">=1.40.0", true),
+            (">=2.0.0", false),
+            ("<2.0.0", true),
+            (">1.52.0", false),
+            ("=1.52.0", true),
+            (">=1.40.0 <2.0.0", true),
+            (">=1.40.0, <1.50.0", false),
+            ("", false),
+            ("not-a-version", false),
+        ] {
+            assert_eq!(
+                satisfies_engine(constraint, running),
+                expected,
+                "{constraint}"
+            );
+        }
+        assert!(satisfies_engine(">=1.40.0", "1.52.0-beta.1"));
+        assert!(!satisfies_engine(">=1.40.0", "garbage"));
+    }
+
+    #[test]
+    #[serial]
+    fn rejects_extensions_that_require_a_newer_goose() {
+        let source = TempDir::new().unwrap();
+        fs::write(
+            source.path().join(MANIFEST_FILENAME),
+            r#"{"id":"future-ext","version":"0.1.0","main":"index.html","engines":{"grc":">=999.0.0"}}"#,
+        )
+        .unwrap();
+        fs::write(source.path().join("index.html"), "<html></html>").unwrap();
+        let root = TempDir::new().unwrap();
+        let _root = PathRootGuard::set(root.path());
+
+        let error = install_client_extension(source.path())
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("requires goose >=999.0.0"), "{error}");
+        assert!(!client_extensions_dir().join("future-ext").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[serial]
+    fn a_failed_copy_leaves_nothing_behind_and_can_be_retried() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let source = TempDir::new().unwrap();
+        write_extension(source.path(), "demo-ext");
+        let unreadable = source.path().join("zz-unreadable.txt");
+        fs::write(&unreadable, "secret").unwrap();
+        fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let root = TempDir::new().unwrap();
+        let _root = PathRootGuard::set(root.path());
+
+        assert!(install_client_extension(source.path()).is_err());
+        assert!(!client_extensions_dir().join("demo-ext").exists());
+        assert!(!client_extensions_dir()
+            .join(".installing-demo-ext")
+            .exists());
+        assert!(list_client_extensions()
+            .unwrap()
+            .iter()
+            .all(|entry| entry.id != "demo-ext"));
+
+        fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644)).unwrap();
+        install_client_extension(source.path()).unwrap();
+        assert!(find("demo-ext").enabled);
     }
 
     #[test]
