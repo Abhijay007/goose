@@ -1,7 +1,7 @@
 import type { HostCapabilityInvokeMessage } from '../messages';
+import { createHostApi } from './hostApi';
 import type { HostPermission } from './permissions';
-import { findHostCapability, findHostMethod } from './registry';
-import type { HostActions, HostCallContext, HostCapabilityHostMessage } from './types';
+import type { HostActions, HostCapabilityHostMessage } from './types';
 
 export interface HostSession {
   notifyPermissions: () => void;
@@ -16,8 +16,7 @@ export function createHostSession(
   postToExtension: (message: HostCapabilityHostMessage) => void,
   actions: HostActions
 ): HostSession {
-  const granted = new Set<HostPermission>(permissions);
-  const disposers = new Map<string, () => void>();
+  const api = createHostApi(extensionId, permissions, actions);
   let disposed = false;
 
   const post = (message: HostCapabilityHostMessage) => {
@@ -26,69 +25,35 @@ export function createHostSession(
     }
   };
 
-  const runDisposer = (key: string) => {
-    const dispose = disposers.get(key);
-    disposers.delete(key);
-    dispose?.();
-  };
-
-  const runAllDisposers = () => {
-    for (const key of [...disposers.keys()]) {
-      runDisposer(key);
-    }
-  };
-
-  const contextFor = (capability: string): HostCallContext => ({
-    extensionId,
-    actions,
-    emit: (event, payload) => post({ type: 'grc/host/event', capability, event, payload }),
-    setDisposer: (key, dispose) => {
-      const scopedKey = `${capability}:${key}`;
-      runDisposer(scopedKey);
-      disposers.set(scopedKey, dispose);
-    },
-    clearDisposer: (key) => runDisposer(`${capability}:${key}`),
-  });
+  api.subscribe((capability, event, payload) =>
+    post({ type: 'grc/host/event', capability, event, payload })
+  );
 
   return {
     notifyPermissions() {
-      post({ type: 'grc/host/permissions', permissions: [...granted] });
+      post({ type: 'grc/host/permissions', permissions: [...api.permissions] });
     },
 
-    async handleInvoke(message) {
-      const { capability, method, id, payload } = message;
-      const fail = (error: string) =>
-        post({ type: 'grc/host/error', capability, method, id, error });
-
-      if (!findHostCapability(capability)) {
-        fail(`Unknown host capability "${capability}"`);
-        return;
-      }
-
-      const definition = findHostMethod(capability, method);
-      if (!definition) {
-        fail(`Unknown method "${capability}.${method}"`);
-        return;
-      }
-
-      if (!granted.has(definition.permission)) {
-        fail(`Plugin "${extensionId}" is not granted permission "${definition.permission}"`);
-        return;
-      }
-
+    async handleInvoke({ capability, method, id, payload }) {
       try {
-        const result = await definition.handle(contextFor(capability), payload);
+        const result = await api.invoke(capability, method, payload);
         post({ type: 'grc/host/result', capability, method, id, payload: result });
       } catch (error) {
-        fail(error instanceof Error ? error.message : String(error));
+        post({
+          type: 'grc/host/error',
+          capability,
+          method,
+          id,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     },
 
-    reset: runAllDisposers,
+    reset: api.reset,
 
     dispose() {
       disposed = true;
-      runAllDisposers();
+      api.dispose();
     },
   };
 }
