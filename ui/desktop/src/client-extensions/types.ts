@@ -53,9 +53,12 @@ export interface ClientExtensionContributes {
   themes?: ThemeContribution[];
 }
 
+export type ClientExtensionRuntime = 'sandbox' | 'native';
+
 export interface ClientExtensionManifest {
   id: string;
   version: string;
+  runtime: ClientExtensionRuntime;
   engines?: {
     grc?: string;
   };

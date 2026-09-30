@@ -237,6 +237,7 @@ export function parseClientExtensionManifest(raw: unknown): ClientExtensionManif
   const manifest: ClientExtensionManifest = {
     id: id.trim(),
     version: version.trim(),
+    runtime: raw.runtime === 'native' ? 'native' : 'sandbox',
     main: main.trim(),
   };
 

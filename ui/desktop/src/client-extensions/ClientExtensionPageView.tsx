@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { useLocation } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { notifyExtensionActivate, routeExtensionToHostMessage } from './extensionHostBridge';
@@ -11,6 +19,13 @@ import { parseClientExtensionViewPath } from './routes';
 import type { HostToExtensionMessage } from './types';
 import { useNavigationSessions } from '../hooks/useNavigationSessions';
 import { useHostActions } from './useHostActions';
+import {
+  getNativePluginPage,
+  getNativePluginsVersion,
+  hasNativePluginFailed,
+  subscribeNativePlugins,
+} from './nativePluginStore';
+import { PluginErrorBoundary } from './PluginErrorBoundary';
 import { Button } from '../components/ui/button';
 import { defineMessages, useIntl } from '../i18n';
 
@@ -41,12 +56,11 @@ const i18n = defineMessages({
   },
 });
 
-export default function ClientExtensionPageView() {
+function SandboxedExtensionPage() {
   const intl = useIntl();
   const location = useLocation();
   const { extensions, getExtensionFrameDocument, registryVersion } = useClientExtensions();
   const hostContext = useExtensionHostContext(null);
-  const { handleNavClick } = useNavigationSessions();
   const hostActions = useHostActions();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [html, setHtml] = useState<string | null>(null);
@@ -180,6 +194,25 @@ export default function ClientExtensionPageView() {
   }
 
   return (
+    <ExtensionPageFrame title={rootLink.label}>
+      <iframe
+        key={`${registryVersion}:${view.extensionId}:${view.viewId}`}
+        ref={iframeRef}
+        title={rootLink.label}
+        sandbox={PLUGIN_FRAME_SANDBOX}
+        srcDoc={html}
+        onLoad={notifyActivate}
+        className="h-full w-full flex-1 border-0 bg-background-primary"
+      />
+    </ExtensionPageFrame>
+  );
+}
+
+function ExtensionPageFrame({ title, children }: { title: string; children: ReactNode }) {
+  const intl = useIntl();
+  const { handleNavClick } = useNavigationSessions();
+
+  return (
     <div className="flex h-full min-h-0 flex-col bg-background-primary">
       <div className="flex items-center gap-2 border-b border-border-primary px-4 py-3">
         <Button
@@ -192,17 +225,70 @@ export default function ClientExtensionPageView() {
           <ArrowLeft className="h-4 w-4" />
           {intl.formatMessage(i18n.backToChat)}
         </Button>
-        <h1 className="text-sm font-medium text-text-primary">{rootLink.label}</h1>
+        <h1 className="text-sm font-medium text-text-primary">{title}</h1>
       </div>
-      <iframe
-        key={`${registryVersion}:${view.extensionId}:${view.viewId}`}
-        ref={iframeRef}
-        title={rootLink.label}
-        sandbox={PLUGIN_FRAME_SANDBOX}
-        srcDoc={html}
-        onLoad={notifyActivate}
-        className="h-full w-full flex-1 border-0 bg-background-primary"
-      />
+      {children}
     </div>
   );
+}
+
+function ExtensionPageMessage({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-full items-center justify-center p-6 text-sm text-text-secondary">
+      {children}
+    </div>
+  );
+}
+
+function NativeExtensionPage({ extensionId, viewId }: { extensionId: string; viewId: string }) {
+  const intl = useIntl();
+  const { extensions } = useClientExtensions();
+  useSyncExternalStore(subscribeNativePlugins, getNativePluginsVersion);
+
+  const rootLink = extensions
+    .find((entry) => entry.id === extensionId)
+    ?.manifest.contributes?.rootLinks?.find((link) => link.id === viewId);
+  const Page = getNativePluginPage(extensionId, viewId);
+  const failedMessage = (
+    <ExtensionPageMessage>
+      {intl.formatMessage(i18n.loadFailed, { extensionId })}
+    </ExtensionPageMessage>
+  );
+
+  if (!rootLink) {
+    return (
+      <ExtensionPageMessage>
+        {intl.formatMessage(i18n.viewNotFound, { extensionId, viewId })}
+      </ExtensionPageMessage>
+    );
+  }
+
+  return (
+    <ExtensionPageFrame title={rootLink.label}>
+      {Page ? (
+        <PluginErrorBoundary resetKey={Page} fallback={failedMessage}>
+          <div className="min-h-0 flex-1 overflow-auto">
+            <Page />
+          </div>
+        </PluginErrorBoundary>
+      ) : hasNativePluginFailed(extensionId) ? (
+        failedMessage
+      ) : (
+        <ExtensionPageMessage>{intl.formatMessage(i18n.loading)}</ExtensionPageMessage>
+      )}
+    </ExtensionPageFrame>
+  );
+}
+
+export default function ClientExtensionPageView() {
+  const location = useLocation();
+  const { extensions } = useClientExtensions();
+  const view = useMemo(() => parseClientExtensionViewPath(location.pathname), [location.pathname]);
+  const extension = view ? extensions.find((entry) => entry.id === view.extensionId) : undefined;
+
+  if (view && extension?.enabled && extension.manifest.runtime === 'native') {
+    return <NativeExtensionPage extensionId={view.extensionId} viewId={view.viewId} />;
+  }
+
+  return <SandboxedExtensionPage />;
 }

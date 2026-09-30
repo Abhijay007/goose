@@ -93,6 +93,11 @@ export function ClientExtensionsProvider({ children }: { children: React.ReactNo
     [extensions]
   );
 
+  const sandboxedExtensions = useMemo(
+    () => enabledExtensions.filter((extension) => extension.manifest.runtime === 'sandbox'),
+    [enabledExtensions]
+  );
+
   useEffect(() => {
     registerPluginThemes(
       enabledExtensions.flatMap((extension) =>
@@ -157,12 +162,12 @@ export function ClientExtensionsProvider({ children }: { children: React.ReactNo
   const getChatActions = useCallback(
     (context: ExtensionHostContext): RegisteredChatAction[] =>
       collectContributions(
-        enabledExtensions,
+        sandboxedExtensions,
         (ext) => ext.manifest.contributes?.chatActions ?? [],
         context,
         (c, id) => ({ ...c, extensionId: id })
       ),
-    [enabledExtensions]
+    [sandboxedExtensions]
   );
 
   const getRootLinks = useCallback(
@@ -179,12 +184,12 @@ export function ClientExtensionsProvider({ children }: { children: React.ReactNo
   const getContentSuffixes = useCallback(
     (context: MessageExtensionHostContext): RegisteredContentSuffix[] =>
       collectContributions(
-        enabledExtensions,
+        sandboxedExtensions,
         (ext) => ext.manifest.contributes?.contentSuffixes ?? [],
         context,
         (c, id) => ({ ...c, extensionId: id })
       ),
-    [enabledExtensions]
+    [sandboxedExtensions]
   );
 
   const getCustomRender = useCallback(
@@ -193,25 +198,25 @@ export function ClientExtensionsProvider({ children }: { children: React.ReactNo
       codeBlocks: CodeBlock[]
     ): RegisteredCustomRender | null => {
       const renders: RegisteredCustomRender[] = [];
-      for (const extension of enabledExtensions) {
+      for (const extension of sandboxedExtensions) {
         for (const contribution of extension.manifest.contributes?.customRenders ?? []) {
           renders.push({ ...contribution, extensionId: extension.id });
         }
       }
       return selectCustomRender(renders, context, codeBlocks);
     },
-    [enabledExtensions]
+    [sandboxedExtensions]
   );
 
   const getSidecars = useCallback(
     (context: ExtensionHostContext): RegisteredSidecar[] =>
       collectContributions(
-        enabledExtensions,
+        sandboxedExtensions,
         (ext) => ext.manifest.contributes?.sidecars ?? [],
         context,
         (c, id) => ({ ...c, extensionId: id })
       ),
-    [enabledExtensions]
+    [sandboxedExtensions]
   );
 
   const value = useMemo(

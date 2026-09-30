@@ -50,6 +50,7 @@ import AppsView from './components/apps/AppsView';
 import StandaloneAppView from './components/apps/StandaloneAppView';
 import ClientExtensionPageView from './client-extensions/ClientExtensionPageView';
 import { ClientExtensionRegistrySync } from './client-extensions/ClientExtensionRegistrySync';
+import { NativePluginRuntime } from './client-extensions/NativePluginRuntime';
 import { View, ViewOptions } from './utils/navigationUtils';
 
 import { useNavigation } from './hooks/useNavigation';
@@ -635,6 +636,7 @@ export function AppInner() {
         <div className="titlebar-drag-region" />
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           <ClientExtensionRegistrySync />
+          <NativePluginRuntime />
           <Routes>
             <Route path="launcher" element={<LauncherView />} />
             <Route path="configure-providers" element={<ConfigureProvidersRoute />} />

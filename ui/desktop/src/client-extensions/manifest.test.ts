@@ -4,8 +4,14 @@ import { parseClientExtensionManifest, satisfiesGrcEngine } from './manifest';
 const base = { id: 'demo-ext', version: '0.1.0', main: 'index.html' };
 
 describe('parseClientExtensionManifest', () => {
-  it('parses the required fields', () => {
-    expect(parseClientExtensionManifest(base)).toEqual(base);
+  it('parses the required fields and defaults to the sandbox runtime', () => {
+    expect(parseClientExtensionManifest(base)).toEqual({ ...base, runtime: 'sandbox' });
+  });
+
+  it('accepts the native runtime and ignores unknown runtimes', () => {
+    expect(parseClientExtensionManifest({ ...base, runtime: 'native' })?.runtime).toBe('native');
+    expect(parseClientExtensionManifest({ ...base, runtime: 'wasm' })?.runtime).toBe('sandbox');
+    expect(parseClientExtensionManifest({ ...base, runtime: 1 })?.runtime).toBe('sandbox');
   });
 
   it('rejects manifests without valid id, version or main', () => {
@@ -98,14 +104,16 @@ describe('theme contributions', () => {
 });
 
 describe('satisfiesGrcEngine', () => {
+  const sandboxed = { ...base, runtime: 'sandbox' as const };
+
   it('accepts manifests without an engine constraint', () => {
-    expect(satisfiesGrcEngine(base, '1.52.0')).toBe(true);
+    expect(satisfiesGrcEngine(sandboxed, '1.52.0')).toBe(true);
   });
 
   it('supports a bare minimum version and range expressions', () => {
-    expect(satisfiesGrcEngine({ ...base, engines: { grc: '1.40.0' } }, '1.52.0')).toBe(true);
-    expect(satisfiesGrcEngine({ ...base, engines: { grc: '1.60.0' } }, '1.52.0')).toBe(false);
-    expect(satisfiesGrcEngine({ ...base, engines: { grc: '>=1.40.0' } }, '1.52.0')).toBe(true);
-    expect(satisfiesGrcEngine({ ...base, engines: { grc: '>=2.0.0' } }, '1.52.0')).toBe(false);
+    expect(satisfiesGrcEngine({ ...sandboxed, engines: { grc: '1.40.0' } }, '1.52.0')).toBe(true);
+    expect(satisfiesGrcEngine({ ...sandboxed, engines: { grc: '1.60.0' } }, '1.52.0')).toBe(false);
+    expect(satisfiesGrcEngine({ ...sandboxed, engines: { grc: '>=1.40.0' } }, '1.52.0')).toBe(true);
+    expect(satisfiesGrcEngine({ ...sandboxed, engines: { grc: '>=2.0.0' } }, '1.52.0')).toBe(false);
   });
 });
