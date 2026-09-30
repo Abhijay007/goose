@@ -64,11 +64,6 @@ export function deactivateNativePlugin(extensionId: string): void {
   notify();
 }
 
-// A plugin's own activate() can be slow (it may await a host call), so a
-// second activation of the same extension can start and finish first. Every
-// check below compares the map's current entry against this call's own
-// `entry` by identity, rather than trusting a boolean "am I current" flag,
-// so a slow call that finishes late can never clobber a newer one's state.
 export async function activateNativePlugin(
   extension: DiscoveredClientExtension,
   code: string,
