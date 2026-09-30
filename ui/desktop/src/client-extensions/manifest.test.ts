@@ -38,6 +38,29 @@ describe('parseClientExtensionManifest', () => {
     ).toBeUndefined();
   });
 
+  it('keeps well-formed http(s) origins, dedupes them and drops the rest', () => {
+    const manifest = parseClientExtensionManifest({
+      ...base,
+      network: [
+        'http://127.0.0.1:8455',
+        'http://127.0.0.1:8455',
+        'https://example.com',
+        'https://example.com/path',
+        'ftp://example.com',
+        'not a url',
+        7,
+      ],
+    });
+
+    expect(manifest?.network).toEqual(['http://127.0.0.1:8455', 'https://example.com']);
+  });
+
+  it('omits network when none are valid', () => {
+    expect(
+      parseClientExtensionManifest({ ...base, network: ['not a url'] })?.network
+    ).toBeUndefined();
+  });
+
   it('parses contributions and drops malformed entries', () => {
     const manifest = parseClientExtensionManifest({
       ...base,

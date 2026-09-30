@@ -19,6 +19,21 @@ function isSafeExtensionId(id: string): boolean {
   return /^[a-zA-Z0-9_-]+$/.test(id);
 }
 
+function isValidOrigin(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      url.origin === value.replace(/\/$/, '')
+    );
+  } catch {
+    return false;
+  }
+}
+
 function parseChatActions(raw: unknown): ChatActionContribution[] | undefined {
   if (!Array.isArray(raw)) {
     return undefined;
@@ -249,6 +264,13 @@ export function parseClientExtensionManifest(raw: unknown): ClientExtensionManif
     const permissions = [...new Set(raw.permissions.filter(isHostPermission))];
     if (permissions.length > 0) {
       manifest.permissions = permissions;
+    }
+  }
+
+  if (Array.isArray(raw.network)) {
+    const origins = [...new Set(raw.network.filter(isValidOrigin))];
+    if (origins.length > 0) {
+      manifest.network = origins;
     }
   }
 

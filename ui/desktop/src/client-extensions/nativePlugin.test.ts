@@ -130,6 +130,7 @@ describe('activateNativePlugin', () => {
     const result = Reflect.get(window, '__result') as Record<string, string[]>;
     expect(Object.keys(result).sort()).toEqual([
       'commands',
+      'net',
       'platform',
       'providers',
       'recipes',

@@ -16,6 +16,7 @@ export interface HostActions {
 export interface HostCallContext {
   extensionId: string;
   actions: HostActions;
+  allowedOrigins: readonly string[];
   emit: (event: string, payload?: unknown) => void;
   setDisposer: (key: string, dispose: () => void) => void;
   clearDisposer: (key: string) => void;

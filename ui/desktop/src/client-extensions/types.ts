@@ -1,5 +1,19 @@
 import type { HostPermission } from './hostCapabilities/permissions';
 
+export interface ClientExtensionNetFetchRequest {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+export interface ClientExtensionNetFetchResult {
+  ok: boolean;
+  status: number;
+  headers: Record<string, string>;
+  text: string;
+}
+
 export interface ChatActionContribution {
   id: string;
   label: string;
@@ -64,6 +78,7 @@ export interface ClientExtensionManifest {
   };
   main: string;
   permissions?: HostPermission[];
+  network?: string[];
   contributes?: ClientExtensionContributes;
 }
 

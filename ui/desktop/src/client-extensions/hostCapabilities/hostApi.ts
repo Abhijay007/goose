@@ -15,7 +15,8 @@ export interface HostApi {
 export function createHostApi(
   extensionId: string,
   permissions: readonly HostPermission[] | undefined,
-  actions: HostActions
+  actions: HostActions,
+  allowedOrigins: readonly string[] = []
 ): HostApi {
   const granted = new Set<HostPermission>(permissions);
   const disposers = new Map<string, () => void>();
@@ -36,6 +37,7 @@ export function createHostApi(
   const contextFor = (capability: string): HostCallContext => ({
     extensionId,
     actions,
+    allowedOrigins,
     emit: (event, payload) => {
       for (const listener of [...listeners]) {
         listener(capability, event, payload);

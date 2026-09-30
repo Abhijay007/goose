@@ -2255,6 +2255,63 @@ ipcMain.handle('select-import-session-file', async () => {
   }
 });
 
+const CLIENT_EXTENSION_FETCH_TIMEOUT_MS = 15_000;
+const CLIENT_EXTENSION_FETCH_MAX_BYTES = 5 * 1024 * 1024;
+
+ipcMain.handle(
+  'client-extension-net-fetch',
+  async (
+    _event,
+    request: { url: string; method?: string; headers?: Record<string, string>; body?: string }
+  ) => {
+    const parsed = new URL(request.url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error(`Unsupported protocol "${parsed.protocol}"`);
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CLIENT_EXTENSION_FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(request.url, {
+        method: request.method ?? 'GET',
+        headers: request.headers,
+        body: request.body,
+        signal: controller.signal,
+      });
+
+      const reader = response.body?.getReader();
+      const chunks: Uint8Array[] = [];
+      let totalBytes = 0;
+      if (reader) {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          totalBytes += value.byteLength;
+          if (totalBytes > CLIENT_EXTENSION_FETCH_MAX_BYTES) {
+            await reader.cancel();
+            throw new Error(`Response exceeded ${CLIENT_EXTENSION_FETCH_MAX_BYTES} bytes`);
+          }
+          chunks.push(value);
+        }
+      }
+
+      const headers: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        headers[key] = value;
+      });
+
+      return {
+        ok: response.ok,
+        status: response.status,
+        headers,
+        text: Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf8'),
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+);
+
 ipcMain.handle('check-ollama', async () => {
   try {
     return new Promise((resolve) => {

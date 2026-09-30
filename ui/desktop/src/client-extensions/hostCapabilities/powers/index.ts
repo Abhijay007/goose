@@ -1,4 +1,5 @@
 import { commandsPower } from './commands';
+import { netPower } from './net';
 import { platformPower } from './platform';
 import { providersPower } from './providers';
 import { recipesPower } from './recipes';
@@ -16,4 +17,5 @@ export const COMMON_HOST_POWERS = [
   storagePower,
   schedulesPower,
   toolsPower,
+  netPower,
 ] as const;

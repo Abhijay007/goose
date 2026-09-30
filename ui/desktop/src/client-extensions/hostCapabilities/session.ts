@@ -14,9 +14,10 @@ export function createHostSession(
   extensionId: string,
   permissions: readonly HostPermission[] | undefined,
   postToExtension: (message: HostCapabilityHostMessage) => void,
-  actions: HostActions
+  actions: HostActions,
+  allowedOrigins: readonly string[] = []
 ): HostSession {
-  const api = createHostApi(extensionId, permissions, actions);
+  const api = createHostApi(extensionId, permissions, actions, allowedOrigins);
   let disposed = false;
 
   const post = (message: HostCapabilityHostMessage) => {

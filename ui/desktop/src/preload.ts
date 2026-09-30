@@ -1,5 +1,9 @@
 import Electron, { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { Recipe } from './recipe';
+import type {
+  ClientExtensionNetFetchRequest,
+  ClientExtensionNetFetchResult,
+} from './client-extensions/types';
 import type { GooseApp } from './types/apps';
 import type { Settings, SettingKey } from './utils/settings';
 import { defaultSettings } from './utils/settings';
@@ -112,6 +116,9 @@ type ElectronAPI = {
   openInChrome: (url: string) => void;
   reloadApp: () => void;
   checkForOllama: () => Promise<boolean>;
+  clientExtensionNetFetch: (
+    request: ClientExtensionNetFetchRequest
+  ) => Promise<ClientExtensionNetFetchResult>;
   selectFileOrDirectory: (defaultPath?: string) => Promise<string | null>;
   selectImportSessionFile: () => Promise<{
     filePath: string;
@@ -214,6 +221,8 @@ const electronAPI: ElectronAPI = {
   openInChrome: (url: string) => ipcRenderer.send('open-in-chrome', url),
   reloadApp: () => ipcRenderer.send('reload-app'),
   checkForOllama: () => ipcRenderer.invoke('check-ollama'),
+  clientExtensionNetFetch: (request: ClientExtensionNetFetchRequest) =>
+    ipcRenderer.invoke('client-extension-net-fetch', request),
 
   selectFileOrDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke('select-file-or-directory', defaultPath),

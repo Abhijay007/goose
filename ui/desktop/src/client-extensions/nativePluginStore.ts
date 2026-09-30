@@ -77,7 +77,12 @@ export async function activateNativePlugin(
   const extensionId = extension.id;
   deactivateNativePlugin(extensionId);
 
-  const hostApi = createHostApi(extensionId, extension.manifest.permissions, actions);
+  const hostApi = createHostApi(
+    extensionId,
+    extension.manifest.permissions,
+    actions,
+    extension.manifest.network
+  );
   let entry: ActivePlugin | undefined;
 
   try {

@@ -12,6 +12,7 @@ export const HOST_PERMISSIONS = [
   'schedules:manage',
   'tools:read',
   'tools:call',
+  'net:fetch',
 ] as const;
 
 export type HostPermission = (typeof HOST_PERMISSIONS)[number];

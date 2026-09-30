@@ -94,7 +94,8 @@ function SandboxedExtensionPage() {
       extension.id,
       extension.manifest.permissions,
       postToExtension,
-      hostActions
+      hostActions,
+      extension.manifest.network
     );
     hostSessionRef.current = session;
     return () => {
