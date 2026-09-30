@@ -13,12 +13,11 @@ import { notifyExtensionActivate, routeExtensionToHostMessage } from './extensio
 import { parseExtensionToHostMessage } from './messages';
 import { PLUGIN_FRAME_SANDBOX } from './sandbox';
 import { useClientExtensions, useExtensionHostContext } from './ClientExtensionsContext';
-import { createHostSession, type HostSession } from './hostCapabilities';
+import { useExtensionHostSession } from './useExtensionHostSession';
 import { useWindowMessage } from '../hooks/useWindowMessage';
 import { parseClientExtensionViewPath } from './routes';
 import type { HostToExtensionMessage } from './types';
 import { useNavigationSessions } from '../hooks/useNavigationSessions';
-import { useHostActions } from './useHostActions';
 import {
   getNativePluginPage,
   getNativePluginsVersion,
@@ -61,7 +60,6 @@ function SandboxedExtensionPage() {
   const location = useLocation();
   const { extensions, getExtensionFrameDocument, registryVersion } = useClientExtensions();
   const hostContext = useExtensionHostContext(null);
-  const hostActions = useHostActions();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -84,25 +82,7 @@ function SandboxedExtensionPage() {
     iframeRef.current?.contentWindow?.postMessage(payload, '*');
   }, []);
 
-  const hostSessionRef = useRef<HostSession | null>(null);
-
-  useEffect(() => {
-    if (!extension) {
-      return;
-    }
-    const session = createHostSession(
-      extension.id,
-      extension.manifest.permissions,
-      postToExtension,
-      hostActions,
-      extension.manifest.network
-    );
-    hostSessionRef.current = session;
-    return () => {
-      session.dispose();
-      hostSessionRef.current = null;
-    };
-  }, [extension, hostActions, postToExtension, registryVersion, view?.viewId]);
+  const hostSessionRef = useExtensionHostSession(extension, postToExtension);
 
   useEffect(() => {
     if (!view) {
@@ -159,7 +139,7 @@ function SandboxedExtensionPage() {
         rootLink?.label ?? intl.formatMessage(i18n.fallbackTitle)
       );
     },
-    [intl, rootLink?.label, view]
+    [hostSessionRef, intl, rootLink?.label, view]
   );
 
   useWindowMessage(handleExtensionMessage);
@@ -176,7 +156,7 @@ function SandboxedExtensionPage() {
       context: hostContext,
     };
     notifyExtensionActivate(iframeRef.current, message, hostSessionRef.current);
-  }, [hostContext, view]);
+  }, [hostContext, hostSessionRef, view]);
 
   if (loadError) {
     return (

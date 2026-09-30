@@ -9,12 +9,13 @@ import React, {
 } from 'react';
 import { motion } from 'framer-motion';
 import { PanelRight, X } from 'lucide-react';
-import { toastService } from '../toasts';
+import { notifyExtensionActivate, routeExtensionToHostMessage } from './extensionHostBridge';
 import { useClientExtensions, useExtensionHostContext } from './ClientExtensionsContext';
 import { parseExtensionToHostMessage } from './messages';
 import { PLUGIN_FRAME_SANDBOX } from './sandbox';
+import { useExtensionHostSession } from './useExtensionHostSession';
 import { useWindowMessage } from '../hooks/useWindowMessage';
-import type { HostToExtensionMessage, RegisteredSidecar } from './types';
+import type { DiscoveredClientExtension, HostToExtensionMessage, RegisteredSidecar } from './types';
 import { NAV_DIMENSIONS } from '../components/Layout/constants';
 import { Button } from '../components/ui/button';
 import { cn } from '../utils';
@@ -167,10 +168,12 @@ export function ClientExtensionSidecarControls() {
 
 function ClientExtensionSidecarContent({
   sidecar,
+  extension,
   hostContext,
   onClose,
 }: {
   sidecar: RegisteredSidecar;
+  extension: DiscoveredClientExtension | undefined;
   hostContext: ReturnType<typeof useExtensionHostContext>;
   onClose: () => void;
 }) {
@@ -179,6 +182,11 @@ function ClientExtensionSidecarContent({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const postToExtension = useCallback((payload: unknown) => {
+    iframeRef.current?.contentWindow?.postMessage(payload, '*');
+  }, []);
+  const hostSessionRef = useExtensionHostSession(extension, postToExtension);
 
   useEffect(() => {
     let cancelled = false;
@@ -202,8 +210,9 @@ function ClientExtensionSidecarContent({
   }, [getExtensionFrameDocument, intl, registryVersion, sidecar.extensionId]);
 
   const handleExtensionMessage = useCallback(
-    (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
+    async (event: MessageEvent) => {
+      const hostSession = hostSessionRef.current;
+      if (event.source !== iframeRef.current?.contentWindow || !hostSession) {
         return;
       }
       const message = parseExtensionToHostMessage(event.data);
@@ -211,35 +220,22 @@ function ClientExtensionSidecarContent({
         return;
       }
 
-      switch (message.type) {
-        case 'grc/ui/showMessage':
-          toastService.success({
-            title: sidecar.label,
-            msg: message.text,
-          });
-          break;
-        default:
-          break;
-      }
+      await routeExtensionToHostMessage(hostSession, message, sidecar.label);
     },
-    [sidecar.label]
+    [hostSessionRef, sidecar.label]
   );
 
   useWindowMessage(handleExtensionMessage);
 
   const notifyActivate = useCallback(() => {
-    if (!iframeRef.current?.contentWindow) {
-      return;
-    }
-
     const message: HostToExtensionMessage = {
       type: 'grc/activate',
       viewId: sidecar.id,
       viewKind: 'sidecar',
       context: hostContext,
     };
-    iframeRef.current.contentWindow.postMessage(message, '*');
-  }, [hostContext, sidecar.id]);
+    notifyExtensionActivate(iframeRef.current, message, hostSessionRef.current);
+  }, [hostContext, hostSessionRef, sidecar.id]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -278,11 +274,16 @@ function ClientExtensionSidecarContent({
 
 export function ClientExtensionSidecarPanel() {
   const { activeSidecar, closeSidecar, hostContext, sidecars } = useSidecarContext();
+  const { extensions } = useClientExtensions();
   const isOpen = activeSidecar !== null;
 
   if (sidecars.length === 0) {
     return null;
   }
+
+  const extension = activeSidecar
+    ? extensions.find((entry) => entry.id === activeSidecar.extensionId)
+    : undefined;
 
   return (
     <motion.div
@@ -295,6 +296,7 @@ export function ClientExtensionSidecarPanel() {
         <div className="h-full w-full overflow-hidden rounded-xl border border-border-primary bg-background-primary">
           <ClientExtensionSidecarContent
             sidecar={activeSidecar}
+            extension={extension}
             hostContext={hostContext}
             onClose={closeSidecar}
           />

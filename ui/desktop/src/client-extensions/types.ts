@@ -150,7 +150,7 @@ export type HostToExtensionMessage =
   | {
       type: 'grc/activate';
       viewId: string;
-      viewKind?: 'rootLink' | 'sidecar';
+      viewKind?: 'rootLink' | 'sidecar' | 'chatAction';
       context: ExtensionHostContext;
     }
   | {

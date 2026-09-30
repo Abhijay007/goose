@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
 import type { Message } from '../types/message';
+import { notifyExtensionActivate, routeExtensionToHostMessage } from './extensionHostBridge';
 import { useClientExtensions } from './ClientExtensionsContext';
 import { parseExtensionToHostMessage } from './messages';
 import { PLUGIN_FRAME_SANDBOX } from './sandbox';
+import { useExtensionHostSession } from './useExtensionHostSession';
 import { buildMessageExtensionContext, extractCodeBlocks } from './messageContext';
 import { useWindowMessage } from '../hooks/useWindowMessage';
 import type {
@@ -25,22 +27,40 @@ function ClientExtensionRenderSlot({
   context: ReturnType<typeof buildMessageExtensionContext>;
   payload: MessageRenderPayload;
 }) {
-  const { getExtensionFrameDocument } = useClientExtensions();
+  const { extensions, getExtensionFrameDocument } = useClientExtensions();
+  const extension = useMemo(
+    () => extensions.find((entry) => entry.id === extensionId),
+    [extensions, extensionId]
+  );
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number | null>(null);
   const [failed, setFailed] = useState(false);
 
-  const handleExtensionMessage = useCallback((event: MessageEvent) => {
-    const iframe = iframeRef.current;
-    if (!iframe || event.source !== iframe.contentWindow) {
-      return;
-    }
-
-    const message = parseExtensionToHostMessage(event.data);
-    if (message?.type === 'grc/resize') {
-      setHeight(Math.max(0, Math.min(message.height, 480)));
-    }
+  const postToExtension = useCallback((message: unknown) => {
+    iframeRef.current?.contentWindow?.postMessage(message, '*');
   }, []);
+  const hostSessionRef = useExtensionHostSession(extension, postToExtension);
+
+  const handleExtensionMessage = useCallback(
+    async (event: MessageEvent) => {
+      const iframe = iframeRef.current;
+      const hostSession = hostSessionRef.current;
+      if (!iframe || event.source !== iframe.contentWindow || !hostSession) {
+        return;
+      }
+
+      const message = parseExtensionToHostMessage(event.data);
+      if (!message) {
+        return;
+      }
+
+      const handled = await routeExtensionToHostMessage(hostSession, message, slotId);
+      if (!handled && message.type === 'grc/resize') {
+        setHeight(Math.max(0, Math.min(message.height, 480)));
+      }
+    },
+    [hostSessionRef, slotId]
+  );
 
   useWindowMessage(handleExtensionMessage);
 
@@ -71,7 +91,7 @@ function ClientExtensionRenderSlot({
           context,
           payload,
         };
-        iframe.contentWindow?.postMessage(message, '*');
+        notifyExtensionActivate(iframe, message, hostSessionRef.current);
       };
 
       iframe.addEventListener('load', onLoad, { once: true });
@@ -81,7 +101,7 @@ function ClientExtensionRenderSlot({
     return () => {
       cancelled = true;
     };
-  }, [context, extensionId, getExtensionFrameDocument, payload, slotId, slotKind]);
+  }, [context, extensionId, getExtensionFrameDocument, hostSessionRef, payload, slotId, slotKind]);
 
   if (failed) {
     return null;

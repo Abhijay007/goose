@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/Tooltip';
 import { cn } from '../utils';
 import { toastService } from '../toasts';
+import { notifyExtensionActivate, routeExtensionToHostMessage } from './extensionHostBridge';
 import { useClientExtensions, useExtensionHostContext } from './ClientExtensionsContext';
 import { parseExtensionToHostMessage } from './messages';
 import { PLUGIN_FRAME_SANDBOX } from './sandbox';
+import { useExtensionHostSession } from './useExtensionHostSession';
 import type { HostToExtensionMessage, RegisteredChatAction } from './types';
 import { useWindowMessage } from '../hooks/useWindowMessage';
 import { defineMessages, useIntl } from '../i18n';
@@ -21,11 +23,6 @@ const i18n = defineMessages({
   },
 });
 
-interface ExtensionRuntime {
-  iframe: HTMLIFrameElement;
-  ready: boolean;
-}
-
 function ClientExtensionActionButton({
   action,
   hostContext,
@@ -36,14 +33,50 @@ function ClientExtensionActionButton({
   onSetInput?: (text: string) => void;
 }) {
   const intl = useIntl();
-  const { getExtensionFrameDocument } = useClientExtensions();
-  const runtimeRef = useRef<ExtensionRuntime | null>(null);
+  const { extensions, getExtensionFrameDocument } = useClientExtensions();
+  const extension = useMemo(
+    () => extensions.find((entry) => entry.id === action.extensionId),
+    [extensions, action.extensionId]
+  );
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const pendingActionRef = useRef(false);
+  const [html, setHtml] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
 
+  const postToExtension = useCallback((payload: unknown) => {
+    iframeRef.current?.contentWindow?.postMessage(payload, '*');
+  }, []);
+  const hostSessionRef = useExtensionHostSession(extension, postToExtension);
+
+  const sendAction = useCallback(() => {
+    const message: HostToExtensionMessage = {
+      type: 'grc/action',
+      actionId: action.id,
+      context: hostContext,
+    };
+    postToExtension(message);
+  }, [action.id, hostContext, postToExtension]);
+
+  const handleLoad = useCallback(() => {
+    const message: HostToExtensionMessage = {
+      type: 'grc/activate',
+      viewId: action.id,
+      viewKind: 'chatAction',
+      context: hostContext,
+    };
+    notifyExtensionActivate(iframeRef.current, message, hostSessionRef.current);
+
+    if (pendingActionRef.current) {
+      pendingActionRef.current = false;
+      sendAction();
+    }
+    setActivating(false);
+  }, [action.id, hostContext, hostSessionRef, sendAction]);
+
   const handleExtensionMessage = useCallback(
-    (event: MessageEvent) => {
-      const runtime = runtimeRef.current;
-      if (!runtime || event.source !== runtime.iframe.contentWindow) {
+    async (event: MessageEvent) => {
+      const hostSession = hostSessionRef.current;
+      if (event.source !== iframeRef.current?.contentWindow || !hostSession) {
         return;
       }
 
@@ -52,114 +85,86 @@ function ClientExtensionActionButton({
         return;
       }
 
-      switch (message.type) {
-        case 'grc/ui/showMessage':
-          toastService.success({ title: action.label, msg: message.text });
-          break;
-        case 'grc/chat/setInput':
-          onSetInput?.(message.text);
-          break;
-        default:
-          break;
+      const handled = await routeExtensionToHostMessage(hostSession, message, action.label);
+      if (!handled && message.type === 'grc/chat/setInput') {
+        onSetInput?.(message.text);
       }
     },
-    [action.label, onSetInput]
+    [action.label, hostSessionRef, onSetInput]
   );
 
   useWindowMessage(handleExtensionMessage);
-
-  const ensureRuntime = useCallback(async () => {
-    if (runtimeRef.current) {
-      return runtimeRef.current;
-    }
-
-    const html = await getExtensionFrameDocument(action.extensionId);
-    if (!html) {
-      return null;
-    }
-
-    const iframe = document.createElement('iframe');
-    iframe.title = `${action.extensionId} runtime`;
-    iframe.setAttribute('sandbox', PLUGIN_FRAME_SANDBOX);
-    iframe.setAttribute('aria-hidden', 'true');
-    iframe.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden';
-    iframe.srcdoc = html;
-    document.body.appendChild(iframe);
-
-    const runtime: ExtensionRuntime = { iframe, ready: false };
-    runtimeRef.current = runtime;
-
-    await new Promise<void>((resolve) => {
-      const onLoad = () => {
-        runtime.ready = true;
-        resolve();
-      };
-      iframe.addEventListener('load', onLoad, { once: true });
-    });
-
-    return runtime;
-  }, [action.extensionId, getExtensionFrameDocument]);
-
-  useEffect(() => {
-    return () => {
-      runtimeRef.current?.iframe.remove();
-      runtimeRef.current = null;
-    };
-  }, []);
 
   const onClick = useCallback(async () => {
     if (activating) {
       return;
     }
 
+    if (html) {
+      sendAction();
+      return;
+    }
+
     setActivating(true);
+    pendingActionRef.current = true;
     try {
-      const runtime = await ensureRuntime();
-      if (!runtime?.iframe.contentWindow) {
-        toastService.error({
-          title: action.label,
-          msg: intl.formatMessage(i18n.loadFailed),
-        });
+      const content = await getExtensionFrameDocument(action.extensionId);
+      if (!content) {
+        toastService.error({ title: action.label, msg: intl.formatMessage(i18n.loadFailed) });
+        pendingActionRef.current = false;
+        setActivating(false);
         return;
       }
-
-      const message: HostToExtensionMessage = {
-        type: 'grc/action',
-        actionId: action.id,
-        context: hostContext,
-      };
-      runtime.iframe.contentWindow.postMessage(message, '*');
+      setHtml(content);
     } catch (error) {
       console.warn('[client-extensions] Action failed:', error);
-      toastService.error({
-        title: action.label,
-        msg: intl.formatMessage(i18n.actionFailed),
-      });
-    } finally {
+      toastService.error({ title: action.label, msg: intl.formatMessage(i18n.actionFailed) });
+      pendingActionRef.current = false;
       setActivating(false);
     }
-  }, [action.id, action.label, activating, ensureRuntime, hostContext, intl]);
+  }, [
+    action.extensionId,
+    action.label,
+    activating,
+    getExtensionFrameDocument,
+    html,
+    intl,
+    sendAction,
+  ]);
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          shape="round"
-          disabled={activating}
-          onClick={() => void onClick()}
-          className={cn(
-            'text-text-primary/70 hover:text-text-primary transition-colors',
-            activating && 'opacity-50'
-          )}
-        >
-          <span className="text-xs font-medium px-0.5">{action.label}</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{action.label}</TooltipContent>
-    </Tooltip>
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            shape="round"
+            disabled={activating}
+            onClick={() => void onClick()}
+            className={cn(
+              'text-text-primary/70 hover:text-text-primary transition-colors',
+              activating && 'opacity-50'
+            )}
+          >
+            <span className="text-xs font-medium px-0.5">{action.label}</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{action.label}</TooltipContent>
+      </Tooltip>
+      {html && (
+        <iframe
+          ref={iframeRef}
+          title={`${action.extensionId} runtime`}
+          sandbox={PLUGIN_FRAME_SANDBOX}
+          srcDoc={html}
+          onLoad={handleLoad}
+          aria-hidden="true"
+          style={{ position: 'absolute', width: 0, height: 0, border: 0, visibility: 'hidden' }}
+        />
+      )}
+    </>
   );
 }
 
