@@ -1,0 +1,295 @@
+#!/usr/bin/env node
+
+import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
+
+import { getProjectIssues, readCoreTeam } from "./github_manager.mjs";
+
+const issueDetailQuery = `
+  query($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      issue(number: $number) {
+        labels(first: 20) { nodes { name } }
+        assignees(first: 100) {
+          pageInfo { hasNextPage }
+          nodes { login }
+        }
+        comments(first: 100) {
+          pageInfo { hasNextPage }
+          nodes {
+            author { login __typename }
+            createdAt
+          }
+        }
+        timelineItems(last: 100, itemTypes: [PROJECT_V2_ITEM_STATUS_CHANGED_EVENT]) {
+          pageInfo { hasPreviousPage }
+          nodes {
+            ... on ProjectV2ItemStatusChangedEvent {
+              actor { login }
+              createdAt
+              project {
+                number
+                owner {
+                  ... on Organization { login }
+                  ... on User { login }
+                }
+              }
+              status
+              wasAutomated
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+const options = parseArguments(process.argv.slice(2));
+if (options.help) {
+  printHelp();
+  process.exit(0);
+}
+const repository = parseRepository(options.repository);
+const gh = process.env.GH_BIN || "gh";
+const coreTeamPath =
+  process.env.BUZZ_CORE_TEAM_FILE || join(scriptDirectory, "core-team.json");
+const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+const buzzHome =
+  process.env.GOOSE_BUZZ_HOME || join(configHome, "goose", "buzz");
+const stateFilePath = join(buzzHome, "phase-transitions.json");
+
+const { byGithub: coreTeamByGithub } = readCoreTeam(coreTeamPath);
+const state = readState();
+const results = [];
+
+const { project } = getProjectIssues(runJson, {
+  command: gh,
+  projectNumber: options.projectNumber,
+  projectOwner: options.projectOwner,
+  projectLimit: options.projectLimit,
+  repository: options.repository,
+});
+
+const targetIssues = project.items.filter(
+  (item) =>
+    item.content?.type === "Issue" &&
+    item.content.repository?.toLowerCase() === options.repository.toLowerCase() &&
+    item.status === "Accepted / design",
+);
+
+for (const item of targetIssues) {
+  try {
+    processAcceptedDesign(item.content.number);
+  } catch (error) {
+    results.push({ issue: item.content.number, action: "failed", reason: error.message });
+  }
+}
+
+saveState(state);
+
+console.log(
+  JSON.stringify({ repository: options.repository, dry_run: options.dryRun, results }, null, 2),
+);
+if (results.some((r) => r.action === "failed")) process.exitCode = 1;
+
+function processAcceptedDesign(issueNumber) {
+  const detail = getIssueDetail(issueNumber);
+  const transitions = relevantTransitions(detail.timelineItems.nodes);
+  const assignees = detail.assignees.nodes.map((n) => n.login);
+
+  const transition = latestTransitionTo(transitions, "Accepted / design");
+  if (!transition) return;
+
+  const issueKey = String(issueNumber);
+  const issueState = state[issueKey] || {};
+  const alreadyUnassigned =
+    issueState.accepted_design?.transition_at === transition.createdAt &&
+    issueState.accepted_design?.unassigned;
+  if (alreadyUnassigned) return;
+
+  const previousShepherd =
+    assignees.find((login) => coreTeamByGithub.has(login.toLowerCase())) || null;
+  if (!options.dryRun) {
+    for (const login of assignees) {
+      runJson(gh, [
+        "api",
+        "--method",
+        "DELETE",
+        `repos/${options.repository}/issues/${issueNumber}/assignees`,
+        "-f",
+        `assignees[]=${login}`,
+      ]);
+    }
+  }
+
+  state[issueKey] = {
+    ...issueState,
+    accepted_design: {
+      transition_at: transition.createdAt,
+      unassigned: true,
+      previous_shepherd: previousShepherd,
+      design_triggered: false,
+    },
+  };
+
+  results.push({
+    issue: issueNumber,
+    action: options.dryRun ? "would-unassign" : "unassigned",
+    phase: "Accepted / design",
+    previous_shepherd: previousShepherd,
+  });
+}
+
+function relevantTransitions(nodes) {
+  return (nodes || []).filter(Boolean).filter(
+    (event) =>
+      event.project?.number === options.projectNumber &&
+      event.project?.owner?.login?.toLowerCase() === options.projectOwner.toLowerCase(),
+  );
+}
+
+function latestTransitionTo(transitions, phase) {
+  return (
+    transitions
+      .filter((t) => t.status === phase && !t.wasAutomated && t.actor?.login)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] || null
+  );
+}
+
+function getIssueDetail(issueNumber) {
+  const response = runJson(gh, [
+    "api",
+    "graphql",
+    "-F",
+    `owner=${repository.owner}`,
+    "-F",
+    `name=${repository.name}`,
+    "-F",
+    `number=${issueNumber}`,
+    "-f",
+    `query=${issueDetailQuery}`,
+  ]);
+  const issue = response.data?.repository?.issue;
+  if (!issue) throw new Error(`GitHub returned no data for issue #${issueNumber}.`);
+  if (
+    issue.assignees.pageInfo?.hasNextPage ||
+    issue.comments.pageInfo?.hasNextPage ||
+    issue.timelineItems.pageInfo?.hasPreviousPage
+  ) {
+    throw new Error(`Issue #${issueNumber} has more data than the query can fetch.`);
+  }
+  return issue;
+}
+
+function readState() {
+  try {
+    return JSON.parse(readFileSync(stateFilePath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveState(stateData) {
+  if (options.dryRun) return;
+  const tmpPath = `${stateFilePath}.tmp`;
+  mkdirSync(buzzHome, { recursive: true });
+  writeFileSync(tmpPath, JSON.stringify(stateData, null, 2));
+  renameSync(tmpPath, stateFilePath);
+}
+
+function parseRepository(value) {
+  const parts = value.split("/");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error(`Invalid repository: ${value}`);
+  }
+  return { owner: parts[0], name: parts[1] };
+}
+
+function parseArguments(arguments_) {
+  const parsed = {
+    repository: "aaif-goose/goose",
+    projectOwner: "aaif-goose",
+    projectNumber: 1,
+    projectLimit: 1000,
+    dryRun: false,
+    help: false,
+  };
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === "--repo") {
+      parsed.repository = requiredValue(arguments_, ++index, argument);
+    } else if (argument === "--project-owner") {
+      parsed.projectOwner = requiredValue(arguments_, ++index, argument);
+    } else if (argument === "--project-number") {
+      parsed.projectNumber = positiveInteger(
+        requiredValue(arguments_, ++index, argument),
+        argument,
+      );
+    } else if (argument === "--project-limit") {
+      parsed.projectLimit = positiveInteger(
+        requiredValue(arguments_, ++index, argument),
+        argument,
+      );
+    } else if (argument === "--dry-run") {
+      parsed.dryRun = true;
+    } else if (argument === "--help" || argument === "-h") {
+      parsed.help = true;
+    } else {
+      throw new Error(`Unknown option: ${argument}`);
+    }
+  }
+  return parsed;
+}
+
+function requiredValue(arguments_, index, option) {
+  const value = arguments_[index];
+  if (!value || value.startsWith("--")) {
+    throw new Error(`${option} requires a value.`);
+  }
+  return value;
+}
+
+function positiveInteger(value, option) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${option} must be a positive integer.`);
+  }
+  return parsed;
+}
+
+function runJson(command, arguments_) {
+  const result = spawnSync(command, arguments_, {
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  if (result.error) {
+    throw new Error(`Could not run ${command}: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || `${command} exited with status ${result.status}.`);
+  }
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    throw new Error(`${command} returned invalid JSON.`);
+  }
+}
+
+function printHelp() {
+  console.log(`Usage: phase_transitions [options]
+
+Handle phase-based shepherd assignment changes for GitHub issues.
+Reads and writes state at $GOOSE_BUZZ_HOME/phase-transitions.json.
+
+Options:
+  --repo OWNER/REPO          GitHub repository (default: aaif-goose/goose)
+  --project-owner OWNER      GitHub project owner (default: aaif-goose)
+  --project-number NUMBER    GitHub project number (default: 1)
+  --project-limit NUMBER     Maximum project items (default: 1000)
+  --dry-run                  Report actions without changing GitHub or state
+  -h, --help                 Show this help`);
+}
