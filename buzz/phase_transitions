@@ -79,12 +79,16 @@ const targetIssues = project.items.filter(
   (item) =>
     item.content?.type === "Issue" &&
     item.content.repository?.toLowerCase() === options.repository.toLowerCase() &&
-    item.status === "Accepted / design",
+    (item.status === "Accepted / design" || item.status === "Ready"),
 );
 
 for (const item of targetIssues) {
   try {
-    processAcceptedDesign(item.content.number);
+    if (item.status === "Accepted / design") {
+      processAcceptedDesign(item.content.number);
+    } else {
+      processReady(item.content.number);
+    }
   } catch (error) {
     results.push({ issue: item.content.number, action: "failed", reason: error.message });
   }
@@ -238,6 +242,48 @@ function getRecentAssignmentLoad() {
     github: person.github,
     normalizedLoad: (counts.get(person.github.toLowerCase()) || 0) / person.capacity,
   }));
+}
+
+function processReady(issueNumber) {
+  const detail = getIssueDetail(issueNumber);
+  const transitions = relevantTransitions(detail.timelineItems.nodes);
+  const assignees = detail.assignees.nodes.map((n) => n.login);
+
+  const transition = latestTransitionTo(transitions, "Ready");
+  if (!transition) return;
+
+  const issueKey = String(issueNumber);
+  const issueState = state[issueKey] || {};
+  const alreadyUnassigned =
+    issueState.ready?.transition_at === transition.createdAt && issueState.ready?.unassigned;
+  if (alreadyUnassigned) return;
+
+  if (!options.dryRun) {
+    for (const login of assignees) {
+      runJson(gh, [
+        "api",
+        "--method",
+        "DELETE",
+        `repos/${options.repository}/issues/${issueNumber}/assignees`,
+        "-f",
+        `assignees[]=${login}`,
+      ]);
+    }
+  }
+
+  state[issueKey] = {
+    ...issueState,
+    ready: {
+      transition_at: transition.createdAt,
+      unassigned: true,
+    },
+  };
+
+  results.push({
+    issue: issueNumber,
+    action: options.dryRun ? "would-unassign" : "unassigned",
+    phase: "Ready",
+  });
 }
 
 function relevantTransitions(nodes) {
