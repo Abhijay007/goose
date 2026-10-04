@@ -114,39 +114,40 @@ function processAcceptedDesign(issueNumber) {
   const alreadyUnassigned =
     issueState.accepted_design?.transition_at === transition.createdAt &&
     issueState.accepted_design?.unassigned;
-  if (alreadyUnassigned) return;
 
-  const previousShepherd =
-    assignees.find((login) => coreTeamByGithub.has(login.toLowerCase())) || null;
-  if (!options.dryRun) {
-    for (const login of assignees) {
-      runJson(gh, [
-        "api",
-        "--method",
-        "DELETE",
-        `repos/${options.repository}/issues/${issueNumber}/assignees`,
-        "-f",
-        `assignees[]=${login}`,
-      ]);
+  if (!alreadyUnassigned) {
+    const previousShepherd =
+      assignees.find((login) => coreTeamByGithub.has(login.toLowerCase())) || null;
+    if (!options.dryRun) {
+      for (const login of assignees) {
+        runJson(gh, [
+          "api",
+          "--method",
+          "DELETE",
+          `repos/${options.repository}/issues/${issueNumber}/assignees`,
+          "-f",
+          `assignees[]=${login}`,
+        ]);
+      }
     }
-  }
 
-  state[issueKey] = {
-    ...issueState,
-    accepted_design: {
-      transition_at: transition.createdAt,
-      unassigned: true,
+    state[issueKey] = {
+      ...issueState,
+      accepted_design: {
+        transition_at: transition.createdAt,
+        unassigned: true,
+        previous_shepherd: previousShepherd,
+        design_triggered: false,
+      },
+    };
+
+    results.push({
+      issue: issueNumber,
+      action: options.dryRun ? "would-unassign" : "unassigned",
+      phase: "Accepted / design",
       previous_shepherd: previousShepherd,
-      design_triggered: false,
-    },
-  };
-
-  results.push({
-    issue: issueNumber,
-    action: options.dryRun ? "would-unassign" : "unassigned",
-    phase: "Accepted / design",
-    previous_shepherd: previousShepherd,
-  });
+    });
+  }
 
   const currentAssignees = alreadyUnassigned ? assignees : [];
   maybeAssignDesignShepherd(
