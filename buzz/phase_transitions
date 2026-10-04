@@ -98,6 +98,7 @@ const { byGithub: coreTeamByGithub, people: coreTeamPeople } = readCoreTeam(core
 const normalizedLoads = getRecentAssignmentLoad();
 const state = readState();
 const results = [];
+let projectStatusFieldCache = null;
 
 const { project } = getProjectIssues(runJson, {
   command: gh,
@@ -384,8 +385,6 @@ function latestTransitionTo(transitions, phase) {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] || null
   );
 }
-
-let projectStatusFieldCache = null;
 
 function getProjectStatusField() {
   if (projectStatusFieldCache) return projectStatusFieldCache;
