@@ -24,9 +24,22 @@ const issueDetailQuery = `
             createdAt
           }
         }
-        timelineItems(last: 100, itemTypes: [PROJECT_V2_ITEM_STATUS_CHANGED_EVENT]) {
+        projectItems(first: 10) {
+          nodes {
+            id
+            project {
+              number
+              owner {
+                ... on Organization { login }
+                ... on User { login }
+              }
+            }
+          }
+        }
+        timelineItems(last: 100, itemTypes: [PROJECT_V2_ITEM_STATUS_CHANGED_EVENT, CROSS_REFERENCED_EVENT]) {
           pageInfo { hasPreviousPage }
           nodes {
+            __typename
             ... on ProjectV2ItemStatusChangedEvent {
               actor { login }
               createdAt
@@ -40,9 +53,28 @@ const issueDetailQuery = `
               status
               wasAutomated
             }
+            ... on CrossReferencedEvent {
+              source {
+                __typename
+                ... on PullRequest { number state }
+              }
+            }
           }
         }
       }
+    }
+  }
+`;
+
+const moveToVerificationMutation = `
+  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: ID!) {
+    updateProjectV2ItemFieldValue(input: {
+      projectId: $projectId
+      itemId: $itemId
+      fieldId: $fieldId
+      value: { singleSelectOptionId: $optionId }
+    }) {
+      projectV2Item { id }
     }
   }
 `;
@@ -257,34 +289,84 @@ function processReady(issueNumber) {
   const issueState = state[issueKey] || {};
   const alreadyUnassigned =
     issueState.ready?.transition_at === transition.createdAt && issueState.ready?.unassigned;
-  if (alreadyUnassigned) return;
 
-  if (!options.dryRun) {
-    for (const login of assignees) {
-      runJson(gh, [
-        "api",
-        "--method",
-        "DELETE",
-        `repos/${options.repository}/issues/${issueNumber}/assignees`,
-        "-f",
-        `assignees[]=${login}`,
-      ]);
+  if (!alreadyUnassigned) {
+    if (!options.dryRun) {
+      for (const login of assignees) {
+        runJson(gh, [
+          "api",
+          "--method",
+          "DELETE",
+          `repos/${options.repository}/issues/${issueNumber}/assignees`,
+          "-f",
+          `assignees[]=${login}`,
+        ]);
+      }
     }
+
+    state[issueKey] = {
+      ...issueState,
+      ready: {
+        transition_at: transition.createdAt,
+        unassigned: true,
+      },
+    };
+
+    results.push({
+      issue: issueNumber,
+      action: options.dryRun ? "would-unassign" : "unassigned",
+      phase: "Ready",
+    });
   }
 
-  state[issueKey] = {
-    ...issueState,
-    ready: {
-      transition_at: transition.createdAt,
-      unassigned: true,
-    },
-  };
+  const openPrs = linkedOpenPrs(detail.timelineItems.nodes);
+  if (openPrs.length > 0) {
+    maybeMovToVerification(issueNumber, detail.projectItems.nodes, openPrs[0].number);
+  }
+}
+
+function maybeMovToVerification(issueNumber, projectItemNodes, prNumber) {
+  const itemId = projectItemNodes
+    .filter(Boolean)
+    .find(
+      (item) =>
+        item.project?.number === options.projectNumber &&
+        item.project?.owner?.login?.toLowerCase() === options.projectOwner.toLowerCase(),
+    )?.id;
+  if (!itemId) return;
+
+  const { projectId, fieldId, verificationOptionId } = getProjectStatusField();
+
+  if (!options.dryRun) {
+    runJson(gh, [
+      "api",
+      "graphql",
+      "-f",
+      `query=${moveToVerificationMutation}`,
+      "-F",
+      `projectId=${projectId}`,
+      "-F",
+      `itemId=${itemId}`,
+      "-F",
+      `fieldId=${fieldId}`,
+      "-F",
+      `optionId=${verificationOptionId}`,
+    ]);
+  }
 
   results.push({
     issue: issueNumber,
-    action: options.dryRun ? "would-unassign" : "unassigned",
-    phase: "Ready",
+    action: options.dryRun ? "would-move-to-verification" : "moved-to-verification",
+    linked_pr: prNumber,
   });
+}
+
+function linkedOpenPrs(nodes) {
+  return (nodes || [])
+    .filter(Boolean)
+    .filter((n) => n.__typename === "CrossReferencedEvent")
+    .map((n) => n.source)
+    .filter((s) => s?.__typename === "PullRequest" && s.state === "OPEN");
 }
 
 function relevantTransitions(nodes) {
@@ -301,6 +383,34 @@ function latestTransitionTo(transitions, phase) {
       .filter((t) => t.status === phase && !t.wasAutomated && t.actor?.login)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] || null
   );
+}
+
+let projectStatusFieldCache = null;
+
+function getProjectStatusField() {
+  if (projectStatusFieldCache) return projectStatusFieldCache;
+  const response = runJson(gh, [
+    "api",
+    "graphql",
+    "-f",
+    `query=query($login:String!,$number:Int!){organization(login:$login){projectV2(number:$number){id,field(name:"Status"){...on ProjectV2SingleSelectField{id,options{id,name}}}}}}`,
+    "-F",
+    `login=${options.projectOwner}`,
+    "-F",
+    `number=${options.projectNumber}`,
+  ]);
+  const projectV2 = response.data?.organization?.projectV2;
+  if (!projectV2?.id) throw new Error("Could not fetch project info.");
+  const field = projectV2.field;
+  if (!field?.id) throw new Error("Could not find Status field in project.");
+  const verificationOption = field.options?.find((o) => o.name === "Verification");
+  if (!verificationOption) throw new Error("Could not find Verification option in Status field.");
+  projectStatusFieldCache = {
+    projectId: projectV2.id,
+    fieldId: field.id,
+    verificationOptionId: verificationOption.id,
+  };
+  return projectStatusFieldCache;
 }
 
 function getIssueDetail(issueNumber) {

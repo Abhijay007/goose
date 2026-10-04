@@ -250,7 +250,9 @@ Handles phase-based shepherd changes for issues in the **Accepted / design** and
 - Once the first human comment appears after the **Accepted / design** transition,
   the script assigns a design shepherd selected by interest match and normalized
   load, with a small continuity preference toward the previous shepherd.
-- When an issue enters **Ready**, the current shepherd is unassigned once.
+- When an issue enters **Ready**, the current shepherd is unassigned once. If the
+  issue already has a linked open pull request, the issue is also moved to
+  **Verification**.
 
 All actions are idempotent: the script records each processed transition in
 `$GOOSE_BUZZ_HOME/phase-transitions.json` and skips issues it has already handled
