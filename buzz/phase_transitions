@@ -62,7 +62,8 @@ const buzzHome =
   process.env.GOOSE_BUZZ_HOME || join(configHome, "goose", "buzz");
 const stateFilePath = join(buzzHome, "phase-transitions.json");
 
-const { byGithub: coreTeamByGithub } = readCoreTeam(coreTeamPath);
+const { byGithub: coreTeamByGithub, people: coreTeamPeople } = readCoreTeam(coreTeamPath);
+const normalizedLoads = getRecentAssignmentLoad();
 const state = readState();
 const results = [];
 
@@ -142,6 +143,101 @@ function processAcceptedDesign(issueNumber) {
     phase: "Accepted / design",
     previous_shepherd: previousShepherd,
   });
+
+  const currentAssignees = alreadyUnassigned ? assignees : [];
+  maybeAssignDesignShepherd(
+    issueNumber,
+    detail.labels.nodes.map((n) => n.name),
+    currentAssignees,
+    detail.comments.nodes,
+  );
+}
+
+function maybeAssignDesignShepherd(issueNumber, labels, currentAssignees, comments) {
+  const issueKey = String(issueNumber);
+  const designState = state[issueKey]?.accepted_design;
+  if (!designState || designState.design_triggered) return;
+  if (currentAssignees.length > 0) return;
+
+  const firstComment = comments
+    .filter(Boolean)
+    .filter(
+      (c) =>
+        c.author?.__typename !== "Bot" &&
+        c.author?.login &&
+        c.createdAt > designState.transition_at,
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+  if (!firstComment) return;
+
+  const selected = selectShepherd(labels, designState.previous_shepherd);
+  if (!selected) return;
+
+  if (!options.dryRun) {
+    runJson(gh, [
+      "api",
+      "--method",
+      "POST",
+      `repos/${options.repository}/issues/${issueNumber}/assignees`,
+      "-f",
+      `assignees[]=${selected.github}`,
+    ]);
+    state[issueKey].accepted_design.design_triggered = true;
+  }
+
+  results.push({
+    issue: issueNumber,
+    action: options.dryRun ? "would-assign-design-shepherd" : "assigned-design-shepherd",
+    assignee: selected.github,
+    triggered_by: firstComment.author?.login,
+    previous_shepherd: designState.previous_shepherd,
+  });
+}
+
+function selectShepherd(labels, previousShepherd) {
+  const loads = new Map(
+    normalizedLoads.map((entry) => [entry.github.toLowerCase(), entry.normalizedLoad]),
+  );
+  const scored = coreTeamPeople.map((person) => {
+    const interestScore = person.interest.filter((interest) =>
+      labels.some((label) => label.toLowerCase().includes(interest.toLowerCase())),
+    ).length;
+    const continuityBonus =
+      previousShepherd?.toLowerCase() === person.github.toLowerCase() ? 0.5 : 0;
+    return {
+      person,
+      score: interestScore + continuityBonus,
+      load: loads.get(person.github.toLowerCase()) || 0,
+    };
+  });
+  scored.sort((a, b) => b.score - a.score || a.load - b.load);
+  return scored[0]?.person || null;
+}
+
+function getRecentAssignmentLoad() {
+  const result = runJson(gh, [
+    "api",
+    "graphql",
+    "-f",
+    `query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){issues(first:100,states:[OPEN,CLOSED],orderBy:{field:CREATED_AT,direction:DESC}){nodes{assignees(first:100){nodes{login}}}}}}`,
+    "-F",
+    `owner=${repository.owner}`,
+    "-F",
+    `name=${repository.name}`,
+  ]);
+  const issues = result.data?.repository?.issues?.nodes;
+  if (!Array.isArray(issues)) throw new Error("Could not read recent issues for load calculation.");
+  const counts = new Map(coreTeamPeople.map((p) => [p.github.toLowerCase(), 0]));
+  for (const issue of issues) {
+    for (const assignee of issue.assignees?.nodes || []) {
+      const handle = assignee.login?.toLowerCase();
+      if (counts.has(handle)) counts.set(handle, counts.get(handle) + 1);
+    }
+  }
+  return coreTeamPeople.map((person) => ({
+    github: person.github,
+    normalizedLoad: (counts.get(person.github.toLowerCase()) || 0) / person.capacity,
+  }));
 }
 
 function relevantTransitions(nodes) {
