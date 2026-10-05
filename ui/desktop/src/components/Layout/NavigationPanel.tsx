@@ -264,7 +264,7 @@ function ProjectCostBadge({
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          className="text-[10px] text-text-tertiary ml-1 flex-shrink-0 font-mono"
+          className="text-[10px] text-text-tertiary ml-auto flex-shrink-0 font-mono"
           aria-label={tip}
         >
           {label}
@@ -435,7 +435,7 @@ export const Navigation: React.FC<{
                       ) : (
                         <ChevronDown className="w-3 h-3 flex-shrink-0" />
                       )}
-                      <span className="truncate flex-1">{group.label}</span>
+                      <span className="truncate">{group.label}</span>
                       {showPricing && (
                         <ProjectCostBadge
                           totalCost={group.totalCost}
