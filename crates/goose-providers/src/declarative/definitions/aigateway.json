@@ -6,16 +6,17 @@
   "api_key_env": "AIGATEWAY_API_KEY",
   "base_url": "https://api.aigateway.sh/v1/chat/completions",
   "catalog_provider_id": "aigateway",
+  "dynamic_models": true,
   "models": [
     {
-      "name": "anthropic/claude-sonnet-4-5",
+      "name": "anthropic/claude-sonnet-4.5",
       "context_limit": 200000,
       "input_token_cost": 0.000003,
       "output_token_cost": 0.000015,
       "currency": "USD"
     },
     {
-      "name": "anthropic/claude-haiku-4-5",
+      "name": "anthropic/claude-haiku-4.5",
       "context_limit": 200000,
       "input_token_cost": 0.0000008,
       "output_token_cost": 0.000004,

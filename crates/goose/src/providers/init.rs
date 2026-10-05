@@ -363,7 +363,7 @@ mod tests {
         let meta = aigateway.metadata();
 
         assert_eq!(meta.name, "aigateway");
-        assert_eq!(meta.default_model, "anthropic/claude-sonnet-4-5");
+        assert_eq!(meta.default_model, "anthropic/claude-sonnet-4.5");
         assert!(meta
             .config_keys
             .iter()
