@@ -58,21 +58,21 @@
       "currency": "USD"
     },
     {
-      "name": "deepseek/deepseek-chat",
+      "name": "deepseek/deepseek-v3.2",
       "context_limit": 163840,
       "input_token_cost": 0.00000027,
       "output_token_cost": 0.0000011,
       "currency": "USD"
     },
     {
-      "name": "deepseek/deepseek-reasoner",
+      "name": "deepseek/deepseek-v4-pro",
       "context_limit": 163840,
       "input_token_cost": 0.00000055,
       "output_token_cost": 0.00000219,
       "currency": "USD"
     },
     {
-      "name": "moonshotai/kimi-k2",
+      "name": "moonshot/kimi-k2.6",
       "context_limit": 262144,
       "input_token_cost": 0.0000006,
       "output_token_cost": 0.0000025,
@@ -86,14 +86,7 @@
       "currency": "USD"
     },
     {
-      "name": "meta-llama/llama-4-maverick",
-      "context_limit": 1000000,
-      "input_token_cost": 0.00000019,
-      "output_token_cost": 0.00000085,
-      "currency": "USD"
-    },
-    {
-      "name": "meta-llama/llama-4-scout",
+      "name": "meta/llama-4-scout-17b-16e-instruct",
       "context_limit": 10000000,
       "input_token_cost": 0.00000008,
       "output_token_cost": 0.0000003,
