@@ -80,7 +80,7 @@ describe('fetchAllowlistContent', () => {
 
   it('follows HTTPS-to-HTTPS redirects and returns body', async () => {
     let callCount = 0;
-    (https.get as any).mockImplementation((url: string, cb: (res: any) => void) => {
+    (https.get as any).mockImplementation((_url: string, cb: (res: any) => void) => {
       const req = mockRequest();
       callCount++;
       if (callCount === 1) {
