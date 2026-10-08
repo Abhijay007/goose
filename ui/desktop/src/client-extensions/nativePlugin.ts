@@ -15,6 +15,13 @@ export interface PluginApi {
   pages: {
     register: (viewId: string, component: PluginComponent) => void;
   };
+  commands: {
+    register: (
+      id: string,
+      description: string,
+      run: (args: unknown) => Promise<unknown> | unknown
+    ) => void;
+  };
 }
 
 export interface PluginDefinition {
@@ -46,7 +53,8 @@ export function loadPluginDefinition(code: string): PluginDefinition {
 export function createPluginApi(
   extensionId: string,
   hostApi: HostApi,
-  registerPage: PluginApi['pages']['register']
+  registerPage: PluginApi['pages']['register'],
+  registerCommand: PluginApi['commands']['register']
 ): PluginApi {
   const host = Object.fromEntries(
     COMMON_HOST_POWERS.map((power) => [
@@ -71,5 +79,6 @@ export function createPluginApi(
         }
       }),
     pages: { register: registerPage },
+    commands: { register: registerCommand },
   };
 }

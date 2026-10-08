@@ -5,6 +5,7 @@ import {
   type PluginComponent,
   type PluginDefinition,
 } from './nativePlugin';
+import { registerPluginCommand, unregisterPluginCommands } from './pluginCommandRegistry';
 import type { DiscoveredClientExtension } from './types';
 
 interface ActivePlugin {
@@ -49,6 +50,7 @@ export function hasNativePluginFailed(extensionId: string): boolean {
 
 export function deactivateNativePlugin(extensionId: string): void {
   failedPlugins.delete(extensionId);
+  unregisterPluginCommands(extensionId);
   const plugin = activePlugins.get(extensionId);
   if (!plugin) {
     return;
@@ -87,13 +89,23 @@ export async function activateNativePlugin(
     activePlugins.set(extensionId, entry);
 
     await definition.activate(
-      createPluginApi(extensionId, hostApi, (viewId, component) => {
-        if (activePlugins.get(extensionId) !== entry) {
-          return;
+      createPluginApi(
+        extensionId,
+        hostApi,
+        (viewId, component) => {
+          if (activePlugins.get(extensionId) !== entry) {
+            return;
+          }
+          pages.set(viewId, component);
+          notify();
+        },
+        (id, description, run) => {
+          if (activePlugins.get(extensionId) !== entry) {
+            return;
+          }
+          registerPluginCommand(extensionId, id, description, run);
         }
-        pages.set(viewId, component);
-        notify();
-      })
+      )
     );
 
     if (activePlugins.get(extensionId) !== entry) {

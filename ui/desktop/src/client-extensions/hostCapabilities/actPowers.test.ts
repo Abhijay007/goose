@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHostSession } from './session';
 import { clearExtensionStorage } from './powers/storage';
+import { registerPluginCommand, unregisterPluginCommands } from '../pluginCommandRegistry';
 import type { HostPermission } from './permissions';
 
 const acpMocks = vi.hoisted(() => ({
@@ -37,6 +38,8 @@ async function invoke(
 
 afterEach(() => {
   localStorage.clear();
+  unregisterPluginCommands('a-plugin');
+  unregisterPluginCommands('b-plugin');
   vi.clearAllMocks();
 });
 
@@ -101,6 +104,41 @@ describe('commands power', () => {
     expect(invalid.error).toContain('Invalid "sessionId"');
     expect(oversized.error).toContain('Invalid "prompt"');
     expect(actions.startChat).not.toHaveBeenCalled();
+  });
+
+  it('lists and runs plugin-registered commands alongside the core ones', async () => {
+    const run = vi.fn().mockReturnValue({ done: true });
+    registerPluginCommand('a-plugin', 'refresh', 'Refresh the view', run);
+
+    const list = await invoke('demo', ['commands:execute'], 'commands', 'list');
+    expect(list.payload).toContainEqual({
+      id: 'a-plugin:refresh',
+      description: 'Refresh the view',
+    });
+
+    const result = await invoke('demo', ['commands:execute'], 'commands', 'execute', {
+      command: 'a-plugin:refresh',
+      args: { x: 1 },
+    });
+    expect(run).toHaveBeenCalledWith({ x: 1 });
+    expect(result.payload).toEqual({ done: true });
+  });
+
+  it('keeps two plugins in separate namespaces and drops them independently', async () => {
+    registerPluginCommand('a-plugin', 'go', 'Go', vi.fn());
+    registerPluginCommand('b-plugin', 'go', 'Go', vi.fn());
+
+    const beforeIds = (await invoke('demo', ['commands:execute'], 'commands', 'list')).payload.map(
+      (c: { id: string }) => c.id
+    );
+    expect(beforeIds).toEqual(expect.arrayContaining(['a-plugin:go', 'b-plugin:go']));
+
+    unregisterPluginCommands('a-plugin');
+    const afterIds = (await invoke('demo', ['commands:execute'], 'commands', 'list')).payload.map(
+      (c: { id: string }) => c.id
+    );
+    expect(afterIds).not.toContain('a-plugin:go');
+    expect(afterIds).toContain('b-plugin:go');
   });
 
   it('requires commands:execute', async () => {

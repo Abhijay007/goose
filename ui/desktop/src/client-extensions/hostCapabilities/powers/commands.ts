@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { findPluginCommand, listPluginCommands } from '../../pluginCommandRegistry';
 import { parsePayload } from '../payload';
 import type { HostActions, HostCapabilityDefinition } from '../types';
 
@@ -67,18 +68,24 @@ export const commandsPower: HostCapabilityDefinition = {
   methods: {
     list: {
       permission: 'commands:execute',
-      handle: () =>
-        [...CORE_COMMANDS].map(([id, command]) => ({ id, description: command.description })),
+      handle: () => [
+        ...[...CORE_COMMANDS].map(([id, command]) => ({ id, description: command.description })),
+        ...listPluginCommands(),
+      ],
     },
     execute: {
       permission: 'commands:execute',
       handle: (context, payload) => {
         const { command, args } = parsePayload(executePayload, payload);
-        const definition = CORE_COMMANDS.get(command);
-        if (!definition) {
+        const coreCommand = CORE_COMMANDS.get(command);
+        if (coreCommand) {
+          return coreCommand.run(context.actions, args);
+        }
+        const pluginCommand = findPluginCommand(command);
+        if (!pluginCommand) {
           throw new Error(`Unknown command "${command}"`);
         }
-        return definition.run(context.actions, args);
+        return pluginCommand.run(args);
       },
     },
   },

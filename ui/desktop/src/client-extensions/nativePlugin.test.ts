@@ -142,6 +142,59 @@ describe('activateNativePlugin', () => {
     expect(result.commands).toEqual(['list', 'execute']);
   });
 
+  it('lets a plugin register a command another plugin can list and run, until it deactivates', async () => {
+    const seen: unknown[] = [];
+    Reflect.set(window, '__seen', seen);
+
+    await activateNativePlugin(
+      extension(['commands:execute']),
+      `defineGoosePlugin({
+        activate(api) {
+          api.commands.register('refresh', 'Refresh the view', (args) => {
+            window.__seen.push(args);
+            return { ok: true };
+          });
+        }
+      });`,
+      actions
+    );
+
+    const other = { ...extension(['commands:execute']), id: 'other' };
+    await activateNativePlugin(
+      other,
+      `defineGoosePlugin({
+        async activate(api) {
+          window.__listIds = (await api.host.commands.list()).map((c) => c.id);
+          window.__result = await api.host.commands.execute({
+            command: 'demo:refresh',
+            args: { x: 1 },
+          });
+        }
+      });`,
+      actions
+    );
+
+    expect(Reflect.get(window, '__listIds')).toContain('demo:refresh');
+    expect(Reflect.get(window, '__result')).toEqual({ ok: true });
+    expect(seen).toEqual([{ x: 1 }]);
+
+    deactivateNativePlugin('demo');
+    await activateNativePlugin(
+      other,
+      `defineGoosePlugin({
+        async activate(api) {
+          window.__listIds = (await api.host.commands.list()).map((c) => c.id);
+        }
+      });`,
+      actions
+    );
+
+    expect(Reflect.get(window, '__listIds')).not.toContain('demo:refresh');
+    Reflect.deleteProperty(window, '__seen');
+    Reflect.deleteProperty(window, '__listIds');
+    deactivateNativePlugin('other');
+  });
+
   it('delivers capability events and stops after deactivation', async () => {
     const received = vi.fn();
     Reflect.set(window, '__received', received);
