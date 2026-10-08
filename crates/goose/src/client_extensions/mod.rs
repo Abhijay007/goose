@@ -5,6 +5,7 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+pub mod net;
 pub mod storage;
 
 const MANIFEST_FILENAME: &str = "client-extension.json";

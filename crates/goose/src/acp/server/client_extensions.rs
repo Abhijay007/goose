@@ -1,7 +1,7 @@
 use super::*;
 use crate::client_extensions::{
     client_extensions_dir, disable_client_extension, enable_client_extension,
-    install_client_extension, list_client_extensions, read_client_extension_main, storage,
+    install_client_extension, list_client_extensions, net, read_client_extension_main, storage,
     uninstall_client_extension, ClientExtensionSource, ClientExtensionSummary,
 };
 use std::path::Path;
@@ -117,5 +117,26 @@ impl GooseAcpAgent {
     ) -> Result<ClientExtensionStorageKeysResponse, agent_client_protocol::Error> {
         let keys = storage::keys(&req.extension_id).map_err(to_acp_error)?;
         Ok(ClientExtensionStorageKeysResponse { keys })
+    }
+
+    pub(super) async fn on_client_extension_net_fetch(
+        &self,
+        req: ClientExtensionNetFetchRequest,
+    ) -> Result<ClientExtensionNetFetchResponse, agent_client_protocol::Error> {
+        let result = net::fetch(
+            &req.extension_id,
+            &req.url,
+            req.method.as_deref(),
+            req.headers,
+            req.body,
+        )
+        .await
+        .map_err(to_acp_error)?;
+        Ok(ClientExtensionNetFetchResponse {
+            ok: result.ok,
+            status: result.status,
+            headers: result.headers,
+            text: result.text,
+        })
     }
 }

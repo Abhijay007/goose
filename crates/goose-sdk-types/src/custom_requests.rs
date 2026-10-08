@@ -786,6 +786,30 @@ pub struct ClientExtensionStorageKeysResponse {
     pub keys: Vec<String>,
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/net/fetch", response = ClientExtensionNetFetchResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionNetFetchRequest {
+    pub extension_id: String,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionNetFetchResponse {
+    pub ok: bool,
+    pub status: u16,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    pub text: String,
+}
+
 /// Sources that onboarding knows how to discover and import.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

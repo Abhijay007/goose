@@ -1,12 +1,5 @@
 import type { HostPermission } from './hostCapabilities/permissions';
 
-export interface ClientExtensionNetFetchRequest {
-  url: string;
-  method?: string;
-  headers?: Record<string, string>;
-  body?: string;
-}
-
 export interface ClientExtensionNetFetchResult {
   ok: boolean;
   status: number;

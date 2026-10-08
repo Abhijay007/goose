@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { acpFetchClientExtensionNet } from '../../../acp/clientExtensions';
 import { parsePayload } from '../payload';
 import type { HostCapabilityDefinition } from '../types';
 
@@ -31,7 +32,7 @@ export const netPower: HostCapabilityDefinition = {
             `Plugin "${context.extensionId}" has not allow-listed origin "${parsed.origin}" in its manifest's "network" field`
           );
         }
-        return window.electron.clientExtensionNetFetch({ url, method, headers, body });
+        return acpFetchClientExtensionNet(context.extensionId, url, method, headers, body);
       },
     },
   },

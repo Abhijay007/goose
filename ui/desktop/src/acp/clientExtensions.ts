@@ -1,6 +1,9 @@
 import type { ClientExtensionInfo } from '@aaif/goose-acp-client';
 import { parseClientExtensionManifest, satisfiesGrcEngine } from '../client-extensions/manifest';
-import type { DiscoveredClientExtension } from '../client-extensions/types';
+import type {
+  ClientExtensionNetFetchResult,
+  DiscoveredClientExtension,
+} from '../client-extensions/types';
 import { getAcpClient } from './acpConnection';
 
 export interface ClientExtensionsListing {
@@ -114,4 +117,22 @@ export async function acpListClientExtensionStorageKeys(extensionId: string): Pr
   const client = await getAcpClient();
   const { keys } = await client.goose.clientExtensionsStorageKeys_unstable({ extensionId });
   return keys;
+}
+
+export async function acpFetchClientExtensionNet(
+  extensionId: string,
+  url: string,
+  method?: string,
+  headers?: Record<string, string>,
+  body?: string
+): Promise<ClientExtensionNetFetchResult> {
+  const client = await getAcpClient();
+  const response = await client.goose.clientExtensionsNetFetch_unstable({
+    extensionId,
+    url,
+    method,
+    headers,
+    body,
+  });
+  return { ...response, headers: response.headers ?? {} };
 }

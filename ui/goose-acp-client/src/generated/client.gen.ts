@@ -15,6 +15,8 @@ import type {
   ArchiveSessionRequest_unstable,
   CanonicalModelInfoRequest_unstable,
   CanonicalModelInfoResponse_unstable,
+  ClientExtensionNetFetchRequest_unstable,
+  ClientExtensionNetFetchResponse_unstable,
   ClientExtensionStorageDeleteRequest_unstable,
   ClientExtensionStorageDeleteResponse_unstable,
   ClientExtensionStorageGetRequest_unstable,
@@ -209,6 +211,7 @@ import {
   zAppsImportResponse_unstable,
   zAppsListResponse_unstable,
   zCanonicalModelInfoResponse_unstable,
+  zClientExtensionNetFetchResponse_unstable,
   zClientExtensionStorageDeleteResponse_unstable,
   zClientExtensionStorageGetResponse_unstable,
   zClientExtensionStorageKeysResponse_unstable,
@@ -954,6 +957,18 @@ export class GooseExtClient {
     return zClientExtensionStorageKeysResponse_unstable.parse(
       raw,
     ) as ClientExtensionStorageKeysResponse_unstable;
+  }
+
+  async clientExtensionsNetFetch_unstable(
+    params: ClientExtensionNetFetchRequest_unstable,
+  ): Promise<ClientExtensionNetFetchResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/net/fetch",
+      params,
+    );
+    return zClientExtensionNetFetchResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionNetFetchResponse_unstable;
   }
 
   async onboardingImportScan_unstable(

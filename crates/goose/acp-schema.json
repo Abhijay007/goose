@@ -3645,6 +3645,74 @@
       "x-side": "agent",
       "x-method": "_goose/unstable/client_extensions/storage/keys"
     },
+    "ClientExtensionNetFetchRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "extensionId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "method": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headers": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "extensionId",
+        "url"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/net/fetch"
+    },
+    "ClientExtensionNetFetchResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "integer",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "status",
+        "text"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/net/fetch"
+    },
     "OnboardingImportScanRequest_unstable": {
       "type": "object",
       "properties": {
@@ -7885,6 +7953,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ClientExtensionNetFetchRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/client_extensions/net/fetch",
+                  "title": "ClientExtensionNetFetchRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/OnboardingImportScanRequest_unstable"
                     }
                   ],
@@ -8767,6 +8844,14 @@
                         }
                       ],
                       "title": "ClientExtensionStorageKeysResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ClientExtensionNetFetchResponse_unstable"
+                        }
+                      ],
+                      "title": "ClientExtensionNetFetchResponse_unstable"
                     },
                     {
                       "allOf": [

@@ -316,6 +316,11 @@
       "responseType": "ClientExtensionStorageKeysResponse_unstable"
     },
     {
+      "method": "_goose/unstable/client_extensions/net/fetch",
+      "requestType": "ClientExtensionNetFetchRequest_unstable",
+      "responseType": "ClientExtensionNetFetchResponse_unstable"
+    },
+    {
       "method": "_goose/unstable/onboarding/import/scan",
       "requestType": "OnboardingImportScanRequest_unstable",
       "responseType": "OnboardingImportScanResponse_unstable"

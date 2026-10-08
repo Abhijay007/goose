@@ -534,6 +534,14 @@ impl GooseAcpAgent {
         self.on_client_extension_storage_keys(req).await
     }
 
+    #[custom_method(ClientExtensionNetFetchRequest)]
+    async fn dispatch_client_extension_net_fetch(
+        &self,
+        req: ClientExtensionNetFetchRequest,
+    ) -> Result<ClientExtensionNetFetchResponse, agent_client_protocol::Error> {
+        self.on_client_extension_net_fetch(req).await
+    }
+
     #[custom_method(OnboardingImportScanRequest)]
     async fn dispatch_onboarding_import_scan(
         &self,

@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHostSession } from './session';
 
+const acpMocks = vi.hoisted(() => ({
+  acpFetchClientExtensionNet: vi.fn(),
+}));
+
+vi.mock('../../acp/clientExtensions', () => ({
+  acpFetchClientExtensionNet: acpMocks.acpFetchClientExtensionNet,
+}));
+
 const actions = {
   startChat: vi.fn(),
   createSession: vi.fn(),
@@ -8,9 +16,9 @@ const actions = {
   openPage: vi.fn(),
 };
 
-async function invoke(allowedOrigins: string[], payload?: unknown) {
+async function invoke(allowedOrigins: string[], payload?: unknown, extensionId = 'demo') {
   const post = vi.fn();
-  await createHostSession('demo', ['net:fetch'], post, actions, allowedOrigins).handleInvoke({
+  await createHostSession(extensionId, ['net:fetch'], post, actions, allowedOrigins).handleInvoke({
     type: 'grc/host/invoke',
     capability: 'net',
     method: 'fetch',
@@ -20,7 +28,6 @@ async function invoke(allowedOrigins: string[], payload?: unknown) {
 }
 
 afterEach(() => {
-  Reflect.deleteProperty(window, 'electron');
   vi.clearAllMocks();
 });
 
@@ -37,34 +44,52 @@ describe('net power', () => {
     expect(result.error).toBe('Invalid URL "not a url"');
   });
 
-  it('calls the Electron bridge only for an allow-listed origin', async () => {
-    const netFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, headers: {}, text: '{}' });
-    Reflect.set(window, 'electron', { clientExtensionNetFetch: netFetch });
-
-    const result = await invoke(['http://127.0.0.1:8455'], {
-      url: 'http://127.0.0.1:8455/api/repos',
-      headers: { 'X-Loupe-Capability': 'tok' },
+  it('calls the ACP backend only for an allow-listed origin, scoped to the caller', async () => {
+    acpMocks.acpFetchClientExtensionNet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {},
+      text: '{}',
     });
 
-    expect(netFetch).toHaveBeenCalledWith({
-      url: 'http://127.0.0.1:8455/api/repos',
-      method: 'GET',
-      headers: { 'X-Loupe-Capability': 'tok' },
-      body: undefined,
-    });
+    const result = await invoke(
+      ['http://127.0.0.1:8455'],
+      {
+        url: 'http://127.0.0.1:8455/api/repos',
+        headers: { 'X-Loupe-Capability': 'tok' },
+      },
+      'demo'
+    );
+
+    expect(acpMocks.acpFetchClientExtensionNet).toHaveBeenCalledWith(
+      'demo',
+      'http://127.0.0.1:8455/api/repos',
+      'GET',
+      { 'X-Loupe-Capability': 'tok' },
+      undefined
+    );
     expect(result.payload).toEqual({ ok: true, status: 200, headers: {}, text: '{}' });
   });
 
   it('rejects a different origin under the same allow-listed host', async () => {
-    const netFetch = vi.fn();
-    Reflect.set(window, 'electron', { clientExtensionNetFetch: netFetch });
-
     const result = await invoke(['http://127.0.0.1:8455'], {
       url: 'http://127.0.0.1:9999/api/repos',
     });
 
     expect(result.error).toContain('"http://127.0.0.1:9999"');
-    expect(netFetch).not.toHaveBeenCalled();
+    expect(acpMocks.acpFetchClientExtensionNet).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the backend error when the response exceeds the size limit', async () => {
+    acpMocks.acpFetchClientExtensionNet.mockRejectedValue(
+      new Error('Response exceeded 5242880 bytes')
+    );
+
+    const result = await invoke(['http://127.0.0.1:8455'], {
+      url: 'http://127.0.0.1:8455/api/repos',
+    });
+
+    expect(result.error).toContain('exceeded 5242880 bytes');
   });
 
   it('rejects an unsupported method and an oversized body', async () => {

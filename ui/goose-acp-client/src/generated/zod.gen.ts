@@ -1195,6 +1195,21 @@ export const zClientExtensionStorageKeysResponse_unstable = z.object({
     keys: z.array(z.string())
 });
 
+export const zClientExtensionNetFetchRequest_unstable = z.object({
+    extensionId: z.string(),
+    url: z.string(),
+    method: z.string().nullish(),
+    headers: z.record(z.string(), z.string()).nullish(),
+    body: z.string().nullish()
+});
+
+export const zClientExtensionNetFetchResponse_unstable = z.object({
+    ok: z.boolean(),
+    status: z.int().gte(0).lte(65535),
+    headers: z.record(z.string(), z.string()).optional().default({}),
+    text: z.string()
+});
+
 /**
  * Sources that onboarding knows how to discover and import.
  */
@@ -2447,6 +2462,7 @@ export const zExtRequest = z.object({
             zClientExtensionStorageSetRequest_unstable,
             zClientExtensionStorageDeleteRequest_unstable,
             zClientExtensionStorageKeysRequest_unstable,
+            zClientExtensionNetFetchRequest_unstable,
             zOnboardingImportScanRequest_unstable,
             zOnboardingImportApplyRequest_unstable,
             zExportSessionRequest_unstable,
@@ -2557,6 +2573,7 @@ export const zExtResponse = z.union([
                 zClientExtensionStorageGetResponse_unstable,
                 zClientExtensionStorageDeleteResponse_unstable,
                 zClientExtensionStorageKeysResponse_unstable,
+                zClientExtensionNetFetchResponse_unstable,
                 zOnboardingImportScanResponse_unstable,
                 zOnboardingImportApplyResponse_unstable,
                 zExportSessionResponse_unstable,
