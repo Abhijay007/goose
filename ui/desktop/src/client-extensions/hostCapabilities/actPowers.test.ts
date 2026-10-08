@@ -1,15 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHostSession } from './session';
-import { clearExtensionStorage } from './powers/storage';
 import { registerPluginCommand, unregisterPluginCommands } from '../pluginCommandRegistry';
 import type { HostPermission } from './permissions';
 
 const acpMocks = vi.hoisted(() => ({
   listRecipes: vi.fn(),
+  acpGetClientExtensionStorage: vi.fn(),
+  acpSetClientExtensionStorage: vi.fn(),
+  acpDeleteClientExtensionStorage: vi.fn(),
+  acpListClientExtensionStorageKeys: vi.fn(),
 }));
 
 vi.mock('../../acp/recipe', () => ({
   listRecipes: acpMocks.listRecipes,
+}));
+
+vi.mock('../../acp/clientExtensions', () => ({
+  acpGetClientExtensionStorage: acpMocks.acpGetClientExtensionStorage,
+  acpSetClientExtensionStorage: acpMocks.acpSetClientExtensionStorage,
+  acpDeleteClientExtensionStorage: acpMocks.acpDeleteClientExtensionStorage,
+  acpListClientExtensionStorageKeys: acpMocks.acpListClientExtensionStorageKeys,
 }));
 
 const actions = {
@@ -37,7 +47,6 @@ async function invoke(
 }
 
 afterEach(() => {
-  localStorage.clear();
   unregisterPluginCommands('a-plugin');
   unregisterPluginCommands('b-plugin');
   vi.clearAllMocks();
@@ -187,73 +196,56 @@ describe('recipes power', () => {
 describe('storage power', () => {
   const grant: HostPermission[] = ['storage:readwrite'];
 
-  it('stores, reads, lists and deletes values', async () => {
-    await invoke('demo', grant, 'storage', 'set', {
+  it('reads, writes, deletes and lists through the backend, scoped to the caller', async () => {
+    acpMocks.acpGetClientExtensionStorage.mockResolvedValue({ theme: 'dark' });
+    acpMocks.acpDeleteClientExtensionStorage.mockResolvedValue(true);
+    acpMocks.acpListClientExtensionStorageKeys.mockResolvedValue(['prefs', 'other']);
+
+    const set = await invoke('demo', grant, 'storage', 'set', {
       key: 'prefs',
-      value: { theme: 'dark', n: [1] },
+      value: { theme: 'dark' },
     });
-    await invoke('demo', grant, 'storage', 'set', { key: 'other', value: 2 });
+    const get = await invoke('demo', grant, 'storage', 'get', { key: 'prefs' });
+    const keys = await invoke('demo', grant, 'storage', 'keys');
+    const del = await invoke('demo', grant, 'storage', 'delete', { key: 'other' });
 
-    expect((await invoke('demo', grant, 'storage', 'get', { key: 'prefs' })).payload).toEqual({
+    expect(acpMocks.acpSetClientExtensionStorage).toHaveBeenCalledWith('demo', 'prefs', {
       theme: 'dark',
-      n: [1],
     });
-    expect((await invoke('demo', grant, 'storage', 'keys')).payload).toEqual(['prefs', 'other']);
-    expect((await invoke('demo', grant, 'storage', 'delete', { key: 'other' })).payload).toEqual({
-      key: 'other',
-      existed: true,
-    });
-    expect((await invoke('demo', grant, 'storage', 'get', { key: 'other' })).payload).toBeNull();
+    expect(acpMocks.acpGetClientExtensionStorage).toHaveBeenCalledWith('demo', 'prefs');
+    expect(acpMocks.acpListClientExtensionStorageKeys).toHaveBeenCalledWith('demo');
+    expect(acpMocks.acpDeleteClientExtensionStorage).toHaveBeenCalledWith('demo', 'other');
+
+    expect(set.payload).toEqual({ key: 'prefs' });
+    expect(get.payload).toEqual({ theme: 'dark' });
+    expect(keys.payload).toEqual(['prefs', 'other']);
+    expect(del.payload).toEqual({ key: 'other', existed: true });
   });
 
-  it('keeps each plugin in its own store', async () => {
-    await invoke('a', grant, 'storage', 'set', { key: 'k', value: 'from-a' });
+  it('uses the host session identity, not a key a plugin could supply itself', async () => {
+    await invoke('plugin-a', grant, 'storage', 'get', { key: 'k' });
+    await invoke('plugin-b', grant, 'storage', 'get', { key: 'k' });
 
-    expect((await invoke('b', grant, 'storage', 'get', { key: 'k' })).payload).toBeNull();
-    expect((await invoke('a', grant, 'storage', 'get', { key: 'k' })).payload).toBe('from-a');
+    expect(acpMocks.acpGetClientExtensionStorage).toHaveBeenNthCalledWith(1, 'plugin-a', 'k');
+    expect(acpMocks.acpGetClientExtensionStorage).toHaveBeenNthCalledWith(2, 'plugin-b', 'k');
   });
 
-  it('stores keys that look like prototype properties as plain data', async () => {
-    await invoke('demo', grant, 'storage', 'set', { key: '__proto__', value: 'x' });
+  it('surfaces the backend error when a limit is exceeded', async () => {
+    acpMocks.acpSetClientExtensionStorage.mockRejectedValue(
+      new Error('plugin storage is limited to 200 keys')
+    );
 
-    expect((await invoke('demo', grant, 'storage', 'get', { key: '__proto__' })).payload).toBe('x');
-    expect(({} as Record<string, unknown>).x).toBeUndefined();
+    const result = await invoke('demo', grant, 'storage', 'set', { key: 'extra', value: 1 });
+
+    expect(result.error).toContain('200 keys');
   });
 
-  it('enforces key and size limits', async () => {
-    for (let i = 0; i < 200; i++) {
-      await invoke('demo', grant, 'storage', 'set', { key: `k${i}`, value: i });
-    }
-    const tooManyKeys = await invoke('demo', grant, 'storage', 'set', { key: 'extra', value: 1 });
-    const overwrite = await invoke('demo', grant, 'storage', 'set', { key: 'k0', value: 'ok' });
-
-    clearExtensionStorage('demo');
-    const tooLarge = await invoke('demo', grant, 'storage', 'set', {
-      key: 'big',
-      value: 'x'.repeat(600 * 1024),
-    });
-
-    expect(tooManyKeys.error).toContain('200 keys');
-    expect(overwrite.payload).toEqual({ key: 'k0' });
-    expect(tooLarge.error).toContain('512 KB');
-  });
-
-  it('recovers from a corrupt store and clears on request', async () => {
-    localStorage.setItem('goose.client-extension-storage.demo', '{not json');
-
-    expect((await invoke('demo', grant, 'storage', 'keys')).payload).toEqual([]);
-
-    await invoke('demo', grant, 'storage', 'set', { key: 'k', value: 1 });
-    clearExtensionStorage('demo');
-
-    expect((await invoke('demo', grant, 'storage', 'keys')).payload).toEqual([]);
-  });
-
-  it('requires storage:readwrite and a key', async () => {
+  it('requires storage:readwrite and a well-formed key', async () => {
     const denied = await invoke('demo', [], 'storage', 'get', { key: 'k' });
     const missing = await invoke('demo', grant, 'storage', 'get', {});
 
     expect(denied.error).toContain('storage:readwrite');
     expect(missing.error).toContain('Invalid "key"');
+    expect(acpMocks.acpGetClientExtensionStorage).not.toHaveBeenCalled();
   });
 });

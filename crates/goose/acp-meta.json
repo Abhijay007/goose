@@ -296,6 +296,26 @@
       "responseType": "ClientExtensionsReadMainResponse_unstable"
     },
     {
+      "method": "_goose/unstable/client_extensions/storage/get",
+      "requestType": "ClientExtensionStorageGetRequest_unstable",
+      "responseType": "ClientExtensionStorageGetResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/storage/set",
+      "requestType": "ClientExtensionStorageSetRequest_unstable",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/storage/delete",
+      "requestType": "ClientExtensionStorageDeleteRequest_unstable",
+      "responseType": "ClientExtensionStorageDeleteResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/storage/keys",
+      "requestType": "ClientExtensionStorageKeysRequest_unstable",
+      "responseType": "ClientExtensionStorageKeysResponse_unstable"
+    },
+    {
       "method": "_goose/unstable/onboarding/import/scan",
       "requestType": "OnboardingImportScanRequest_unstable",
       "responseType": "OnboardingImportScanResponse_unstable"

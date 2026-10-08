@@ -1163,6 +1163,38 @@ export const zClientExtensionsReadMainResponse_unstable = z.object({
     html: z.string()
 });
 
+export const zClientExtensionStorageGetRequest_unstable = z.object({
+    extensionId: z.string(),
+    key: z.string()
+});
+
+export const zClientExtensionStorageGetResponse_unstable = z.object({
+    value: z.unknown().optional()
+});
+
+export const zClientExtensionStorageSetRequest_unstable = z.object({
+    extensionId: z.string(),
+    key: z.string(),
+    value: z.unknown()
+});
+
+export const zClientExtensionStorageDeleteRequest_unstable = z.object({
+    extensionId: z.string(),
+    key: z.string()
+});
+
+export const zClientExtensionStorageDeleteResponse_unstable = z.object({
+    existed: z.boolean()
+});
+
+export const zClientExtensionStorageKeysRequest_unstable = z.object({
+    extensionId: z.string()
+});
+
+export const zClientExtensionStorageKeysResponse_unstable = z.object({
+    keys: z.array(z.string())
+});
+
 /**
  * Sources that onboarding knows how to discover and import.
  */
@@ -2411,6 +2443,10 @@ export const zExtRequest = z.object({
             zClientExtensionsSetEnabledRequest_unstable,
             zClientExtensionsUninstallRequest_unstable,
             zClientExtensionsReadMainRequest_unstable,
+            zClientExtensionStorageGetRequest_unstable,
+            zClientExtensionStorageSetRequest_unstable,
+            zClientExtensionStorageDeleteRequest_unstable,
+            zClientExtensionStorageKeysRequest_unstable,
             zOnboardingImportScanRequest_unstable,
             zOnboardingImportApplyRequest_unstable,
             zExportSessionRequest_unstable,
@@ -2518,6 +2554,9 @@ export const zExtResponse = z.union([
                 zClientExtensionsListResponse_unstable,
                 zClientExtensionsInstallResponse_unstable,
                 zClientExtensionsReadMainResponse_unstable,
+                zClientExtensionStorageGetResponse_unstable,
+                zClientExtensionStorageDeleteResponse_unstable,
+                zClientExtensionStorageKeysResponse_unstable,
                 zOnboardingImportScanResponse_unstable,
                 zOnboardingImportApplyResponse_unstable,
                 zExportSessionResponse_unstable,

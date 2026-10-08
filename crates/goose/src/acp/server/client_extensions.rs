@@ -1,7 +1,7 @@
 use super::*;
 use crate::client_extensions::{
     client_extensions_dir, disable_client_extension, enable_client_extension,
-    install_client_extension, list_client_extensions, read_client_extension_main,
+    install_client_extension, list_client_extensions, read_client_extension_main, storage,
     uninstall_client_extension, ClientExtensionSource, ClientExtensionSummary,
 };
 use std::path::Path;
@@ -85,5 +85,37 @@ impl GooseAcpAgent {
     ) -> Result<ClientExtensionsReadMainResponse, agent_client_protocol::Error> {
         let html = read_client_extension_main(&req.id).map_err(to_acp_error)?;
         Ok(ClientExtensionsReadMainResponse { html })
+    }
+
+    pub(super) async fn on_client_extension_storage_get(
+        &self,
+        req: ClientExtensionStorageGetRequest,
+    ) -> Result<ClientExtensionStorageGetResponse, agent_client_protocol::Error> {
+        let value = storage::get(&req.extension_id, &req.key).map_err(to_acp_error)?;
+        Ok(ClientExtensionStorageGetResponse { value })
+    }
+
+    pub(super) async fn on_client_extension_storage_set(
+        &self,
+        req: ClientExtensionStorageSetRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        storage::set(&req.extension_id, &req.key, req.value).map_err(to_acp_error)?;
+        Ok(EmptyResponse {})
+    }
+
+    pub(super) async fn on_client_extension_storage_delete(
+        &self,
+        req: ClientExtensionStorageDeleteRequest,
+    ) -> Result<ClientExtensionStorageDeleteResponse, agent_client_protocol::Error> {
+        let existed = storage::delete(&req.extension_id, &req.key).map_err(to_acp_error)?;
+        Ok(ClientExtensionStorageDeleteResponse { existed })
+    }
+
+    pub(super) async fn on_client_extension_storage_keys(
+        &self,
+        req: ClientExtensionStorageKeysRequest,
+    ) -> Result<ClientExtensionStorageKeysResponse, agent_client_protocol::Error> {
+        let keys = storage::keys(&req.extension_id).map_err(to_acp_error)?;
+        Ok(ClientExtensionStorageKeysResponse { keys })
     }
 }

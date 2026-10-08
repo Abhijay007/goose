@@ -736,6 +736,56 @@ pub struct ClientExtensionsReadMainResponse {
     pub html: String,
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/storage/get", response = ClientExtensionStorageGetResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageGetRequest {
+    pub extension_id: String,
+    pub key: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageGetResponse {
+    pub value: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/storage/set", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageSetRequest {
+    pub extension_id: String,
+    pub key: String,
+    pub value: serde_json::Value,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/storage/delete", response = ClientExtensionStorageDeleteResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageDeleteRequest {
+    pub extension_id: String,
+    pub key: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageDeleteResponse {
+    pub existed: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/storage/keys", response = ClientExtensionStorageKeysResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageKeysRequest {
+    pub extension_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageKeysResponse {
+    pub keys: Vec<String>,
+}
+
 /// Sources that onboarding knows how to discover and import.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

@@ -5,6 +5,8 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+pub mod storage;
+
 const MANIFEST_FILENAME: &str = "client-extension.json";
 const CONFIG_FILENAME: &str = "config.json";
 const DEV_DIR_ENV: &str = "GOOSE_CLIENT_EXTENSIONS_DEV_DIR";
@@ -195,6 +197,8 @@ pub fn uninstall_client_extension(id: &str) -> Result<()> {
     config.disabled.retain(|entry| entry != id);
     config.enabled_dev.retain(|entry| entry != id);
     save_client_extensions_config(&config)?;
+
+    storage::clear(id)?;
 
     Ok(())
 }
@@ -516,8 +520,11 @@ mod tests {
         enable_client_extension("demo-ext").unwrap();
         assert!(find("demo-ext").enabled);
 
+        storage::set("demo-ext", "theme", serde_json::json!("dark")).unwrap();
+
         uninstall_client_extension("demo-ext").unwrap();
         assert!(!client_extensions_dir().join("demo-ext").exists());
+        assert_eq!(storage::get("demo-ext", "theme").unwrap(), None);
     }
 
     #[test]

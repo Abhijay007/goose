@@ -79,3 +79,39 @@ export async function acpReadClientExtensionMain(id: string): Promise<string> {
   const { html } = await client.goose.clientExtensionsReadMain_unstable({ id });
   return html;
 }
+
+export async function acpGetClientExtensionStorage(
+  extensionId: string,
+  key: string
+): Promise<unknown> {
+  const client = await getAcpClient();
+  const { value } = await client.goose.clientExtensionsStorageGet_unstable({ extensionId, key });
+  return value ?? null;
+}
+
+export async function acpSetClientExtensionStorage(
+  extensionId: string,
+  key: string,
+  value: unknown
+): Promise<void> {
+  const client = await getAcpClient();
+  await client.goose.clientExtensionsStorageSet_unstable({ extensionId, key, value });
+}
+
+export async function acpDeleteClientExtensionStorage(
+  extensionId: string,
+  key: string
+): Promise<boolean> {
+  const client = await getAcpClient();
+  const { existed } = await client.goose.clientExtensionsStorageDelete_unstable({
+    extensionId,
+    key,
+  });
+  return existed;
+}
+
+export async function acpListClientExtensionStorageKeys(extensionId: string): Promise<string[]> {
+  const client = await getAcpClient();
+  const { keys } = await client.goose.clientExtensionsStorageKeys_unstable({ extensionId });
+  return keys;
+}

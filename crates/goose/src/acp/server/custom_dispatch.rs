@@ -502,6 +502,38 @@ impl GooseAcpAgent {
         self.on_client_extensions_read_main(req).await
     }
 
+    #[custom_method(ClientExtensionStorageGetRequest)]
+    async fn dispatch_client_extension_storage_get(
+        &self,
+        req: ClientExtensionStorageGetRequest,
+    ) -> Result<ClientExtensionStorageGetResponse, agent_client_protocol::Error> {
+        self.on_client_extension_storage_get(req).await
+    }
+
+    #[custom_method(ClientExtensionStorageSetRequest)]
+    async fn dispatch_client_extension_storage_set(
+        &self,
+        req: ClientExtensionStorageSetRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_client_extension_storage_set(req).await
+    }
+
+    #[custom_method(ClientExtensionStorageDeleteRequest)]
+    async fn dispatch_client_extension_storage_delete(
+        &self,
+        req: ClientExtensionStorageDeleteRequest,
+    ) -> Result<ClientExtensionStorageDeleteResponse, agent_client_protocol::Error> {
+        self.on_client_extension_storage_delete(req).await
+    }
+
+    #[custom_method(ClientExtensionStorageKeysRequest)]
+    async fn dispatch_client_extension_storage_keys(
+        &self,
+        req: ClientExtensionStorageKeysRequest,
+    ) -> Result<ClientExtensionStorageKeysResponse, agent_client_protocol::Error> {
+        self.on_client_extension_storage_keys(req).await
+    }
+
     #[custom_method(OnboardingImportScanRequest)]
     async fn dispatch_onboarding_import_scan(
         &self,

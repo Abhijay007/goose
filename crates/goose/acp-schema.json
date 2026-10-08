@@ -3542,6 +3542,109 @@
       "x-side": "agent",
       "x-method": "_goose/unstable/client_extensions/read_main"
     },
+    "ClientExtensionStorageGetRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "extensionId": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionId",
+        "key"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/storage/get"
+    },
+    "ClientExtensionStorageGetResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "value": {}
+      },
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/storage/get"
+    },
+    "ClientExtensionStorageSetRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "extensionId": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "extensionId",
+        "key",
+        "value"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/storage/set"
+    },
+    "ClientExtensionStorageDeleteRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "extensionId": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionId",
+        "key"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/storage/delete"
+    },
+    "ClientExtensionStorageDeleteResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "existed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "existed"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/storage/delete"
+    },
+    "ClientExtensionStorageKeysRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "extensionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionId"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/storage/keys"
+    },
+    "ClientExtensionStorageKeysResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/storage/keys"
+    },
     "OnboardingImportScanRequest_unstable": {
       "type": "object",
       "properties": {
@@ -7746,6 +7849,42 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ClientExtensionStorageGetRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/client_extensions/storage/get",
+                  "title": "ClientExtensionStorageGetRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ClientExtensionStorageSetRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/client_extensions/storage/set",
+                  "title": "ClientExtensionStorageSetRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ClientExtensionStorageDeleteRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/client_extensions/storage/delete",
+                  "title": "ClientExtensionStorageDeleteRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ClientExtensionStorageKeysRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/client_extensions/storage/keys",
+                  "title": "ClientExtensionStorageKeysRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/OnboardingImportScanRequest_unstable"
                     }
                   ],
@@ -8604,6 +8743,30 @@
                         }
                       ],
                       "title": "ClientExtensionsReadMainResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ClientExtensionStorageGetResponse_unstable"
+                        }
+                      ],
+                      "title": "ClientExtensionStorageGetResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ClientExtensionStorageDeleteResponse_unstable"
+                        }
+                      ],
+                      "title": "ClientExtensionStorageDeleteResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ClientExtensionStorageKeysResponse_unstable"
+                        }
+                      ],
+                      "title": "ClientExtensionStorageKeysResponse_unstable"
                     },
                     {
                       "allOf": [
