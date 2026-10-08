@@ -1,15 +1,7 @@
 import { compareVersions, satisfies } from 'compare-versions';
+import { z } from 'zod';
 import { isHostPermission } from './hostCapabilities/permissions';
-import type {
-  ChatActionContribution,
-  ClientExtensionManifest,
-  ContentSuffixContribution,
-  CustomRenderContribution,
-  CustomRenderMatch,
-  RootLinkContribution,
-  SidecarContribution,
-  ThemeContribution,
-} from './types';
+import type { ClientExtensionManifest } from './types';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -34,204 +26,77 @@ function isValidOrigin(value: unknown): value is string {
   }
 }
 
-function parseChatActions(raw: unknown): ChatActionContribution[] | undefined {
+function parseContributionList<S extends z.ZodType>(
+  raw: unknown,
+  schema: S
+): z.output<S>[] | undefined {
   if (!Array.isArray(raw)) {
     return undefined;
   }
 
-  const chatActions = raw
-    .map((entry) => {
-      if (!isRecord(entry)) {
-        return null;
-      }
-      if (typeof entry.id !== 'string' || typeof entry.label !== 'string') {
-        return null;
-      }
-      return {
-        id: entry.id,
-        label: entry.label,
-        when: typeof entry.when === 'string' ? entry.when : undefined,
-      };
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  const entries = raw
+    .map((entry) => schema.safeParse(entry))
+    .filter((result) => result.success)
+    .map((result) => result.data);
 
-  return chatActions.length > 0 ? chatActions : undefined;
+  return entries.length > 0 ? entries : undefined;
 }
 
-function parseRootLinks(raw: unknown): RootLinkContribution[] | undefined {
-  if (!Array.isArray(raw)) {
-    return undefined;
-  }
+const idLabelWhenSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  when: z.string().optional(),
+});
 
-  const rootLinks = raw
-    .map((entry) => {
-      if (!isRecord(entry)) {
-        return null;
-      }
-      if (typeof entry.id !== 'string' || typeof entry.label !== 'string') {
-        return null;
-      }
-      return {
-        id: entry.id,
-        label: entry.label,
-        when: typeof entry.when === 'string' ? entry.when : undefined,
-      };
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+const contentSuffixSchema = z.object({
+  id: z.string(),
+  when: z.string().optional(),
+});
 
-  return rootLinks.length > 0 ? rootLinks : undefined;
-}
+const customRenderMatchSchema = z
+  .object({
+    contentType: z.enum(['code', 'text']).optional().catch(undefined),
+    language: z
+      .string()
+      .optional()
+      .transform((value) => {
+        const trimmed = value?.trim().toLowerCase();
+        return trimmed ? trimmed : undefined;
+      }),
+  })
+  .refine((match) => match.contentType !== undefined || match.language !== undefined);
 
-function parseContentSuffixes(raw: unknown): ContentSuffixContribution[] | undefined {
-  if (!Array.isArray(raw)) {
-    return undefined;
-  }
+const customRenderSchema = z.object({
+  id: z.string(),
+  match: customRenderMatchSchema,
+  when: z.string().optional(),
+  display: z.literal('inline').optional().catch(undefined),
+  priority: z.number().finite().optional().catch(undefined),
+});
 
-  const contentSuffixes = raw
-    .map((entry) => {
-      if (!isRecord(entry)) {
-        return null;
-      }
-      if (typeof entry.id !== 'string') {
-        return null;
-      }
-      return {
-        id: entry.id,
-        when: typeof entry.when === 'string' ? entry.when : undefined,
-      };
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+const sidecarSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  when: z.string().optional(),
+  defaultOpen: z.literal(true).optional().catch(undefined),
+});
 
-  return contentSuffixes.length > 0 ? contentSuffixes : undefined;
-}
-
-function parseCustomRenderMatch(raw: unknown): CustomRenderMatch | null {
-  if (!isRecord(raw)) {
-    return null;
-  }
-
-  const match: CustomRenderMatch = {};
-
-  if (typeof raw.contentType === 'string') {
-    if (raw.contentType === 'code' || raw.contentType === 'text') {
-      match.contentType = raw.contentType;
+const themeTokensSchema = z.record(z.string(), z.unknown()).transform((tokens) => {
+  const strings: Record<string, string> = {};
+  for (const [key, value] of Object.entries(tokens)) {
+    if (typeof value === 'string') {
+      strings[key] = value;
     }
   }
+  return strings;
+});
 
-  if (typeof raw.language === 'string' && raw.language.trim()) {
-    match.language = raw.language.trim().toLowerCase();
-  }
-
-  return Object.keys(match).length > 0 ? match : null;
-}
-
-function parseCustomRenders(raw: unknown): CustomRenderContribution[] | undefined {
-  if (!Array.isArray(raw)) {
-    return undefined;
-  }
-
-  const customRenders = raw
-    .map((entry) => {
-      if (!isRecord(entry)) {
-        return null;
-      }
-      if (typeof entry.id !== 'string') {
-        return null;
-      }
-
-      const match = parseCustomRenderMatch(entry.match);
-      if (!match) {
-        return null;
-      }
-
-      const render: CustomRenderContribution = {
-        id: entry.id,
-        match,
-      };
-
-      if (typeof entry.when === 'string') {
-        render.when = entry.when;
-      }
-      if (entry.display === 'inline') {
-        render.display = 'inline';
-      }
-      if (typeof entry.priority === 'number' && Number.isFinite(entry.priority)) {
-        render.priority = entry.priority;
-      }
-
-      return render;
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-
-  return customRenders.length > 0 ? customRenders : undefined;
-}
-
-function parseSidecars(raw: unknown): SidecarContribution[] | undefined {
-  if (!Array.isArray(raw)) {
-    return undefined;
-  }
-
-  const sidecars = raw
-    .map((entry) => {
-      if (!isRecord(entry)) {
-        return null;
-      }
-      if (typeof entry.id !== 'string' || typeof entry.label !== 'string') {
-        return null;
-      }
-
-      const sidecar: SidecarContribution = {
-        id: entry.id,
-        label: entry.label,
-      };
-
-      if (typeof entry.when === 'string') {
-        sidecar.when = entry.when;
-      }
-      if (entry.defaultOpen === true) {
-        sidecar.defaultOpen = true;
-      }
-
-      return sidecar;
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-
-  return sidecars.length > 0 ? sidecars : undefined;
-}
-
-function parseThemes(raw: unknown): ThemeContribution[] | undefined {
-  if (!Array.isArray(raw)) {
-    return undefined;
-  }
-
-  const themes = raw
-    .map((entry): ThemeContribution | null => {
-      if (!isRecord(entry) || !isRecord(entry.tokens)) {
-        return null;
-      }
-      if (typeof entry.id !== 'string' || !isSafeExtensionId(entry.id)) {
-        return null;
-      }
-      if (typeof entry.label !== 'string' || !entry.label.trim()) {
-        return null;
-      }
-      if (entry.variant !== 'light' && entry.variant !== 'dark') {
-        return null;
-      }
-
-      const tokens: Record<string, string> = {};
-      for (const [key, value] of Object.entries(entry.tokens)) {
-        if (typeof value === 'string') {
-          tokens[key] = value;
-        }
-      }
-
-      return { id: entry.id, label: entry.label.trim(), variant: entry.variant, tokens };
-    })
-    .filter((entry): entry is ThemeContribution => entry !== null);
-
-  return themes.length > 0 ? themes : undefined;
-}
+const themeSchema = z.object({
+  id: z.string().refine(isSafeExtensionId),
+  label: z.string().trim().min(1),
+  variant: z.enum(['light', 'dark']),
+  tokens: themeTokensSchema,
+});
 
 export function parseClientExtensionManifest(raw: unknown): ClientExtensionManifest | null {
   if (!isRecord(raw)) {
@@ -275,12 +140,15 @@ export function parseClientExtensionManifest(raw: unknown): ClientExtensionManif
   }
 
   if (isRecord(raw.contributes)) {
-    const chatActions = parseChatActions(raw.contributes.chatActions);
-    const rootLinks = parseRootLinks(raw.contributes.rootLinks);
-    const contentSuffixes = parseContentSuffixes(raw.contributes.contentSuffixes);
-    const customRenders = parseCustomRenders(raw.contributes.customRenders);
-    const sidecars = parseSidecars(raw.contributes.sidecars);
-    const themes = parseThemes(raw.contributes.themes);
+    const chatActions = parseContributionList(raw.contributes.chatActions, idLabelWhenSchema);
+    const rootLinks = parseContributionList(raw.contributes.rootLinks, idLabelWhenSchema);
+    const contentSuffixes = parseContributionList(
+      raw.contributes.contentSuffixes,
+      contentSuffixSchema
+    );
+    const customRenders = parseContributionList(raw.contributes.customRenders, customRenderSchema);
+    const sidecars = parseContributionList(raw.contributes.sidecars, sidecarSchema);
+    const themes = parseContributionList(raw.contributes.themes, themeSchema);
     if (chatActions || rootLinks || contentSuffixes || customRenders || sidecars || themes) {
       manifest.contributes = {
         ...(chatActions ? { chatActions } : {}),
